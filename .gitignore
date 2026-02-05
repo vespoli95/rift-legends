@@ -2,6 +2,9 @@
 .env
 /node_modules/
 
+# SQLite data
+/data/
+
 # React Router
 /.react-router/
 /build/
