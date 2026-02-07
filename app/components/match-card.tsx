@@ -1,20 +1,21 @@
 import { Link } from "react-router";
 import type { ProcessedMatch } from "~/lib/types";
 import {
-  championIconUrl,
-  itemIconUrl,
-  summonerSpellIconUrl,
+  spriteStyle,
   SUMMONER_SPELL_MAP,
   QUEUE_TYPE_MAP,
 } from "~/lib/ddragon";
+import type { SpriteData } from "~/lib/ddragon";
 import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor } from "~/lib/utils";
 
 export function MatchCard({
   match,
   version,
+  sprites,
 }: {
   match: ProcessedMatch;
   version: string;
+  sprites: SpriteData;
 }) {
   const bgClass = match.win
     ? "bg-blue-50 border-l-blue-500 dark:bg-blue-950/30 dark:border-l-blue-400"
@@ -26,6 +27,10 @@ export function MatchCard({
   const score = riftScore(match);
   const scoreColor = riftScoreColor(score);
 
+  const champCoords = sprites.champions[match.championName];
+  const spell1Coords = sprites.spells[spell1];
+  const spell2Coords = sprites.spells[spell2];
+
   return (
     <Link
       to={`/matches/${match.matchId}`}
@@ -33,11 +38,14 @@ export function MatchCard({
     >
       {/* Champion Icon + Level */}
       <div className="relative flex-shrink-0">
-        <img
-          src={championIconUrl(version, match.championName)}
-          alt={match.championName}
-          className="h-10 w-10 rounded-full"
-        />
+        {champCoords ? (
+          <div
+            className="rounded-full"
+            style={spriteStyle(version, champCoords, sprites.sheetSizes, 40)}
+          />
+        ) : (
+          <div className="h-10 w-10 rounded-full bg-gray-300 dark:bg-gray-700" />
+        )}
         <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-[10px] font-bold text-white">
           {match.champLevel}
         </span>
@@ -45,16 +53,22 @@ export function MatchCard({
 
       {/* Summoner Spells */}
       <div className="flex flex-shrink-0 flex-col gap-0.5">
-        <img
-          src={summonerSpellIconUrl(version, spell1)}
-          alt="Spell 1"
-          className="h-5 w-5 rounded"
-        />
-        <img
-          src={summonerSpellIconUrl(version, spell2)}
-          alt="Spell 2"
-          className="h-5 w-5 rounded"
-        />
+        {spell1Coords ? (
+          <div
+            className="rounded"
+            style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 20)}
+          />
+        ) : (
+          <div className="h-5 w-5 rounded bg-gray-300 dark:bg-gray-700" />
+        )}
+        {spell2Coords ? (
+          <div
+            className="rounded"
+            style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 20)}
+          />
+        ) : (
+          <div className="h-5 w-5 rounded bg-gray-300 dark:bg-gray-700" />
+        )}
       </div>
 
       {/* KDA */}
@@ -104,11 +118,10 @@ export function MatchCard({
       <div className="hidden flex-shrink-0 items-center gap-0.5 md:flex">
         {match.items.map((itemId, i) => (
           <div key={i} className="h-6 w-6">
-            {itemId > 0 ? (
-              <img
-                src={itemIconUrl(version, itemId)}
-                alt={`Item ${i + 1}`}
-                className="h-6 w-6 rounded"
+            {itemId > 0 && sprites.items[String(itemId)] ? (
+              <div
+                className="rounded"
+                style={spriteStyle(version, sprites.items[String(itemId)], sprites.sheetSizes, 24)}
               />
             ) : (
               <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-700" />
@@ -116,11 +129,10 @@ export function MatchCard({
           </div>
         ))}
         <div className="ml-0.5 h-6 w-6">
-          {match.trinket > 0 ? (
-            <img
-              src={itemIconUrl(version, match.trinket)}
-              alt="Trinket"
-              className="h-6 w-6 rounded-full"
+          {match.trinket > 0 && sprites.items[String(match.trinket)] ? (
+            <div
+              className="rounded-full"
+              style={spriteStyle(version, sprites.items[String(match.trinket)], sprites.sheetSizes, 24)}
             />
           ) : (
             <div className="h-6 w-6 rounded-full bg-gray-300 dark:bg-gray-700" />

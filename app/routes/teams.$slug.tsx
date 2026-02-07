@@ -9,7 +9,7 @@ import {
   removeTeamMember,
   updateTeamEmoji,
 } from "~/lib/db.server";
-import { getCurrentVersion } from "~/lib/ddragon.server";
+import { getCurrentVersion, getSpriteData } from "~/lib/ddragon.server";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
@@ -18,6 +18,7 @@ import {
 } from "~/lib/riot-api.server";
 import { parseRiotId, timeAgo } from "~/lib/utils";
 import { profileIconUrl } from "~/lib/ddragon";
+import type { SpriteData } from "~/lib/ddragon";
 import { MemberSection, MemberCard } from "~/components/member-section";
 import { MatchCard } from "~/components/match-card";
 import { PlayerSearch } from "~/components/player-search";
@@ -44,11 +45,12 @@ export async function loader({ params }: Route.LoaderArgs) {
     // Fall back to a reasonable default
   }
 
-  const memberData: MemberWithMatches[] = await Promise.all(
-    members.map((member) => getMemberMatchHistory(member)),
-  );
+  const [memberData, sprites] = await Promise.all([
+    Promise.all(members.map((member) => getMemberMatchHistory(member))),
+    getSpriteData(version),
+  ]);
 
-  return { team, memberData, version };
+  return { team, memberData, version, sprites };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -190,7 +192,7 @@ function PencilIcon({ className }: { className?: string }) {
 }
 
 export default function TeamDetail({ loaderData }: Route.ComponentProps) {
-  const { team, memberData, version } = loaderData;
+  const { team, memberData, version, sprites } = loaderData;
   const actionData = useActionData<typeof action>();
   const [isEditing, setIsEditing] = useState(false);
   const emojiFormRef = useRef<HTMLFormElement>(null);
@@ -475,7 +477,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                     {timeAgo(match.gameCreation)}
                   </span>
                 </div>
-                <MatchCard match={match} version={version} />
+                <MatchCard match={match} version={version} sprites={sprites} />
               </div>
             ))
           )}
@@ -498,6 +500,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
               <MemberSection
                 data={data}
                 version={version}
+                sprites={sprites}
                 isEditing={isEditing}
               />
             </div>

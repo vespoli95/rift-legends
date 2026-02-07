@@ -2,14 +2,13 @@ import { Link } from "react-router";
 import type { Route } from "./+types/matches.$matchId";
 import { getMatchDetail, getRankedByPuuid } from "~/lib/riot-api.server";
 import type { RankedData } from "~/lib/riot-api.server";
-import { getCurrentVersion } from "~/lib/ddragon.server";
+import { getCurrentVersion, getSpriteData } from "~/lib/ddragon.server";
 import {
-  championIconUrl,
-  itemIconUrl,
-  summonerSpellIconUrl,
+  spriteStyle,
   SUMMONER_SPELL_MAP,
   QUEUE_TYPE_MAP,
 } from "~/lib/ddragon";
+import type { SpriteData } from "~/lib/ddragon";
 import {
   formatKDA,
   kdaRatio,
@@ -50,23 +49,26 @@ export async function loader({ params }: Route.LoaderArgs) {
     scoreMap[s.puuid] = s.score;
   }
 
-  // Fetch ranked data for all participants in parallel
-  const rankedResults = await Promise.all(
-    match.info.participants.map(async (p) => {
-      try {
-        return { puuid: p.puuid, ranked: await getRankedByPuuid(p.puuid) };
-      } catch {
-        return { puuid: p.puuid, ranked: null };
-      }
-    }),
-  );
+  // Fetch ranked data and sprite data in parallel
+  const [rankedResults, sprites] = await Promise.all([
+    Promise.all(
+      match.info.participants.map(async (p) => {
+        try {
+          return { puuid: p.puuid, ranked: await getRankedByPuuid(p.puuid) };
+        } catch {
+          return { puuid: p.puuid, ranked: null };
+        }
+      }),
+    ),
+    getSpriteData(version),
+  ]);
 
   const rankedMap: Record<string, RankedData | null> = {};
   for (const r of rankedResults) {
     rankedMap[r.puuid] = r.ranked;
   }
 
-  return { match, version, scoreMap, mvpPuuid, rankedMap };
+  return { match, version, scoreMap, mvpPuuid, rankedMap, sprites };
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -98,12 +100,14 @@ function ParticipantRow({
   score,
   isMvp,
   ranked,
+  sprites,
 }: {
   participant: MatchParticipant;
   version: string;
   score: number;
   isMvp: boolean;
   ranked: RankedData | null;
+  sprites: SpriteData;
 }) {
   const spell1 = SUMMONER_SPELL_MAP[participant.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[participant.summoner2Id] || "SummonerFlash";
@@ -117,6 +121,9 @@ function ParticipantRow({
     participant.item4,
     participant.item5,
   ];
+  const champCoords = sprites.champions[participant.championName];
+  const spell1Coords = sprites.spells[spell1];
+  const spell2Coords = sprites.spells[spell2];
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
@@ -124,26 +131,29 @@ function ParticipantRow({
       <td className="py-2 pl-3 pr-2">
         <div className="flex items-center gap-1.5">
           <div className="relative flex-shrink-0">
-            <img
-              src={championIconUrl(version, participant.championName)}
-              alt={participant.championName}
-              className="h-8 w-8 rounded-full"
-            />
+            {champCoords ? (
+              <div
+                className="rounded-full"
+                style={spriteStyle(version, champCoords, sprites.sheetSizes, 32)}
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-700" />
+            )}
             <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900 text-[9px] font-bold text-white">
               {participant.champLevel}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <img
-              src={summonerSpellIconUrl(version, spell1)}
-              alt="Spell 1"
-              className="h-4 w-4 rounded"
-            />
-            <img
-              src={summonerSpellIconUrl(version, spell2)}
-              alt="Spell 2"
-              className="h-4 w-4 rounded"
-            />
+            {spell1Coords ? (
+              <div className="rounded" style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 16)} />
+            ) : (
+              <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
+            )}
+            {spell2Coords ? (
+              <div className="rounded" style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 16)} />
+            ) : (
+              <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
+            )}
           </div>
         </div>
       </td>
@@ -228,11 +238,10 @@ function ParticipantRow({
         <div className="flex items-center gap-0.5">
           {items.map((itemId, i) => (
             <div key={i} className="h-6 w-6">
-              {itemId > 0 ? (
-                <img
-                  src={itemIconUrl(version, itemId)}
-                  alt={`Item ${i + 1}`}
-                  className="h-6 w-6 rounded"
+              {itemId > 0 && sprites.items[String(itemId)] ? (
+                <div
+                  className="rounded"
+                  style={spriteStyle(version, sprites.items[String(itemId)], sprites.sheetSizes, 24)}
                 />
               ) : (
                 <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-700" />
@@ -240,11 +249,10 @@ function ParticipantRow({
             </div>
           ))}
           <div className="ml-0.5 h-6 w-6">
-            {participant.item6 > 0 ? (
-              <img
-                src={itemIconUrl(version, participant.item6)}
-                alt="Trinket"
-                className="h-6 w-6 rounded-full"
+            {participant.item6 > 0 && sprites.items[String(participant.item6)] ? (
+              <div
+                className="rounded-full"
+                style={spriteStyle(version, sprites.items[String(participant.item6)], sprites.sheetSizes, 24)}
               />
             ) : (
               <div className="h-6 w-6 rounded-full bg-gray-300 dark:bg-gray-700" />
@@ -263,6 +271,7 @@ function TeamTable({
   mvpPuuid,
   isWinner,
   rankedMap,
+  sprites,
 }: {
   participants: MatchParticipant[];
   version: string;
@@ -270,6 +279,7 @@ function TeamTable({
   mvpPuuid: string;
   isWinner: boolean;
   rankedMap: Record<string, RankedData | null>;
+  sprites: SpriteData;
 }) {
   const borderColor = isWinner
     ? "border-l-blue-500 dark:border-l-blue-400"
@@ -311,6 +321,7 @@ function TeamTable({
               score={scoreMap[p.puuid] ?? 0}
               isMvp={p.puuid === mvpPuuid}
               ranked={rankedMap[p.puuid] ?? null}
+              sprites={sprites}
             />
           ))}
         </tbody>
@@ -320,7 +331,7 @@ function TeamTable({
 }
 
 export default function MatchDetail({ loaderData }: Route.ComponentProps) {
-  const { match, version, scoreMap, mvpPuuid, rankedMap } = loaderData;
+  const { match, version, scoreMap, mvpPuuid, rankedMap, sprites } = loaderData;
   const { info } = match;
 
   const queueName = QUEUE_TYPE_MAP[info.queueId] || "Game";
@@ -357,6 +368,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           mvpPuuid={mvpPuuid}
           isWinner={blueWon}
           rankedMap={rankedMap}
+          sprites={sprites}
         />
         <TeamTable
           participants={redSide}
@@ -365,6 +377,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           mvpPuuid={mvpPuuid}
           isWinner={!blueWon}
           rankedMap={rankedMap}
+          sprites={sprites}
         />
       </div>
     </main>

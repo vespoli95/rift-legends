@@ -1,6 +1,7 @@
 import { Form, Link } from "react-router";
 import type { MemberWithMatches, RankedInfo } from "~/lib/types";
 import { profileIconUrl } from "~/lib/ddragon";
+import type { SpriteData } from "~/lib/ddragon";
 import { MatchCard } from "./match-card";
 import { ErrorPanel } from "./error-panel";
 
@@ -53,10 +54,12 @@ function TrashIcon({ className }: { className?: string }) {
 export function MemberSection({
   data,
   version,
+  sprites,
   isEditing = false,
 }: {
   data: MemberWithMatches;
   version: string;
+  sprites: SpriteData;
   isEditing?: boolean;
 }) {
   const { member, matches, ranked, error } = data;
@@ -121,7 +124,7 @@ export function MemberSection({
           </p>
         )}
         {visibleMatches.map((match) => (
-          <MatchCard key={match.matchId} match={match} version={version} />
+          <MatchCard key={match.matchId} match={match} version={version} sprites={sprites} />
         ))}
         {hasMore && (
           <Link

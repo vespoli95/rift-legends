@@ -1,7 +1,8 @@
 import { Link, useFetcher } from "react-router";
 import { useEffect, useState, useMemo } from "react";
 import type { Route } from "./+types/players.$gameName.$tagLine";
-import { getCurrentVersion } from "~/lib/ddragon.server";
+import { getCurrentVersion, getSpriteData } from "~/lib/ddragon.server";
+import type { SpriteData } from "~/lib/ddragon";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
@@ -115,6 +116,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     // Fall back
   }
 
+  const sprites = await getSpriteData(version);
+
   // Look up account
   let puuid: string;
   let actualGameName = gameName;
@@ -129,6 +132,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     if (e instanceof RiotApiError && e.status === 404) {
       return {
         version,
+        sprites,
         gameName,
         tagLine,
         profileIconId: null,
@@ -142,6 +146,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
     return {
       version,
+      sprites,
       gameName,
       tagLine,
       profileIconId: null,
@@ -182,6 +187,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
     return {
       version,
+      sprites,
       gameName: actualGameName,
       tagLine: actualTagLine,
       profileIconId,
@@ -194,6 +200,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   } catch {
     return {
       version,
+      sprites,
       gameName: actualGameName,
       tagLine: actualTagLine,
       profileIconId,
@@ -210,6 +217,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export default function PlayerPage({ loaderData }: Route.ComponentProps) {
   const {
     version,
+    sprites,
     gameName,
     tagLine,
     profileIconId,
@@ -369,7 +377,7 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
             </h2>
             <div className="space-y-1.5">
               {dayMatches.map((match) => (
-                <MatchCard key={match.matchId} match={match} version={version} />
+                <MatchCard key={match.matchId} match={match} version={version} sprites={sprites} />
               ))}
             </div>
           </div>

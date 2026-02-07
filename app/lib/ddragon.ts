@@ -1,5 +1,50 @@
 const DDRAGON_BASE = "https://ddragon.leagueoflegends.com";
 
+// --- Sprite types ---
+
+export interface SpriteCoords {
+  sprite: string; // e.g. "champion0.png"
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface SpriteData {
+  champions: Record<string, SpriteCoords>;
+  items: Record<string, SpriteCoords>;
+  spells: Record<string, SpriteCoords>;
+  sheetSizes: Record<string, { w: number; h: number }>;
+}
+
+export function spriteStyle(
+  version: string,
+  coords: SpriteCoords,
+  sheetSizes: Record<string, { w: number; h: number }>,
+  displaySize: number,
+): React.CSSProperties {
+  const sheet = sheetSizes[coords.sprite];
+  if (!sheet) return { width: displaySize, height: displaySize };
+  const scale = displaySize / coords.w;
+  return {
+    width: displaySize,
+    height: displaySize,
+    backgroundImage: `url(${DDRAGON_BASE}/cdn/${version}/img/sprite/${coords.sprite})`,
+    backgroundPosition: `${-coords.x * scale}px ${-coords.y * scale}px`,
+    backgroundSize: `${sheet.w * scale}px auto`,
+    backgroundRepeat: "no-repeat",
+    overflow: "hidden",
+  };
+}
+
+// --- Individual URL helpers (kept for profile icons which have no sprite sheet) ---
+
+export function profileIconUrl(version: string, iconId: number): string {
+  return `${DDRAGON_BASE}/cdn/${version}/img/profileicon/${iconId}.png`;
+}
+
+// --- Fallback URL helpers (for when sprite data is unavailable) ---
+
 export function championIconUrl(version: string, championName: string): string {
   return `${DDRAGON_BASE}/cdn/${version}/img/champion/${championName}.png`;
 }
@@ -12,9 +57,7 @@ export function summonerSpellIconUrl(version: string, spellName: string): string
   return `${DDRAGON_BASE}/cdn/${version}/img/spell/${spellName}.png`;
 }
 
-export function profileIconUrl(version: string, iconId: number): string {
-  return `${DDRAGON_BASE}/cdn/${version}/img/profileicon/${iconId}.png`;
-}
+// --- Maps ---
 
 export const SUMMONER_SPELL_MAP: Record<number, string> = {
   1: "SummonerBoost",       // Cleanse
