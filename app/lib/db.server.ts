@@ -200,6 +200,47 @@ export function searchCachedAccounts(
   return results;
 }
 
+export function searchMatchParticipants(
+  query: string,
+  limit = 8
+): { gameName: string; tagLine: string }[] {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      `SELECT data FROM riot_cache WHERE cache_key LIKE 'match:%'`
+    )
+    .all() as { data: string }[];
+
+  const queryLower = query.toLowerCase();
+  const seen = new Set<string>();
+  const results: { gameName: string; tagLine: string }[] = [];
+
+  for (const row of rows) {
+    if (results.length >= limit) break;
+    try {
+      const match = JSON.parse(row.data) as {
+        info: {
+          participants: { riotIdGameName: string; riotIdTagline: string }[];
+        };
+      };
+      for (const p of match.info.participants) {
+        if (!p.riotIdGameName || !p.riotIdTagline) continue;
+        const key = `${p.riotIdGameName.toLowerCase()}#${p.riotIdTagline.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        if (p.riotIdGameName.toLowerCase().includes(queryLower)) {
+          seen.add(key);
+          results.push({ gameName: p.riotIdGameName, tagLine: p.riotIdTagline });
+          if (results.length >= limit) break;
+        }
+      }
+    } catch {
+      // Skip malformed cache entries
+    }
+  }
+
+  return results;
+}
+
 export function getCachedSummoner(puuid: string): { profileIconId: number } | null {
   const d = getDb();
   const row = d

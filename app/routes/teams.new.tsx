@@ -2,6 +2,7 @@ import { Form, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/teams.new";
 import { createTeam, slugExists } from "~/lib/db.server";
 import { generateSlug } from "~/lib/utils";
+import { EmojiPicker } from "~/components/emoji-picker";
 
 export function meta() {
   return [{ title: "Create Team - Rift Legends" }];
@@ -52,20 +53,12 @@ export default function NewTeam() {
       <Form method="post" className="mt-6">
         <div className="flex gap-3">
           <div className="flex-shrink-0">
-            <label
-              htmlFor="emoji"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Icon
             </label>
-            <input
-              type="text"
-              id="emoji"
-              name="emoji"
-              maxLength={2}
-              placeholder="&#x2694;&#xFE0F;"
-              className="mt-1 block w-16 rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-lg text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-            />
+            <div className="mt-1">
+              <EmojiPicker name="emoji" />
+            </div>
           </div>
           <div className="flex-1">
             <label

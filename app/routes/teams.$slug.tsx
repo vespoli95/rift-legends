@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Form, redirect, useActionData } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/teams.$slug";
 import {
   getTeamBySlug,
@@ -16,10 +16,13 @@ import {
   getMemberMatchHistory,
   RiotApiError,
 } from "~/lib/riot-api.server";
-import { parseRiotId } from "~/lib/utils";
-import { MemberSection } from "~/components/member-section";
+import { parseRiotId, timeAgo } from "~/lib/utils";
+import { profileIconUrl } from "~/lib/ddragon";
+import { MemberSection, MemberCard } from "~/components/member-section";
+import { MatchCard } from "~/components/match-card";
 import { PlayerSearch } from "~/components/player-search";
-import type { MemberWithMatches } from "~/lib/types";
+import { EmojiPicker } from "~/components/emoji-picker";
+import type { MemberWithMatches, ProcessedMatch, TeamMember } from "~/lib/types";
 
 export function meta({ data }: Route.MetaArgs) {
   const teamName = data?.team?.name || "Team";
@@ -136,6 +139,43 @@ export async function action({ request, params }: Route.ActionArgs) {
   return { error: "Unknown action" };
 }
 
+function GridIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v2.5A2.25 2.25 0 004.25 9h2.5A2.25 2.25 0 009 6.75v-2.5A2.25 2.25 0 006.75 2h-2.5zm0 9A2.25 2.25 0 002 13.25v2.5A2.25 2.25 0 004.25 18h2.5A2.25 2.25 0 009 15.75v-2.5A2.25 2.25 0 006.75 11h-2.5zm9-9A2.25 2.25 0 0011 4.25v2.5A2.25 2.25 0 0013.25 9h2.5A2.25 2.25 0 0018 6.75v-2.5A2.25 2.25 0 0015.75 2h-2.5zm0 9A2.25 2.25 0 0011 13.25v2.5A2.25 2.25 0 0013.25 18h2.5A2.25 2.25 0 0018 15.75v-2.5A2.25 2.25 0 0015.75 11h-2.5z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M2 3.75A.75.75 0 012.75 3h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 3.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.166a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="group relative">
+      {children}
+      <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow dark:bg-gray-700">
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
 function PencilIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -153,6 +193,118 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   const { team, memberData, version } = loaderData;
   const actionData = useActionData<typeof action>();
   const [isEditing, setIsEditing] = useState(false);
+  const emojiFormRef = useRef<HTMLFormElement>(null);
+  const lastMemberRef = useRef<HTMLDivElement>(null);
+  const [searchKey, setSearchKey] = useState(0);
+  const prevMemberCount = useRef(memberData.length);
+  const [layout, setLayout] = useState<"list" | "grid" | "recent">(() => {
+    if (typeof window === "undefined") return "list";
+    return (localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent") || "list";
+  });
+
+  function switchLayout(mode: "list" | "grid" | "recent") {
+    setLayout(mode);
+    localStorage.setItem("rift-legends-layout", mode);
+  }
+
+  // --- Member ordering (cached in localStorage) ---
+  const orderKey = `rift-legends-order:${team.slug}`;
+
+  function getSortedMembers() {
+    if (typeof window === "undefined") return memberData;
+    try {
+      const stored = localStorage.getItem(orderKey);
+      if (!stored) return memberData;
+      const order: number[] = JSON.parse(stored);
+      const byId = new Map(memberData.map((d) => [d.member.id, d]));
+      const sorted: typeof memberData = [];
+      for (const id of order) {
+        const m = byId.get(id);
+        if (m) {
+          sorted.push(m);
+          byId.delete(id);
+        }
+      }
+      // Append any new members not in the saved order
+      for (const m of byId.values()) sorted.push(m);
+      return sorted;
+    } catch {
+      return memberData;
+    }
+  }
+
+  const [orderedMembers, setOrderedMembers] = useState(getSortedMembers);
+
+  // Re-sort when memberData changes (add/remove)
+  useEffect(() => {
+    setOrderedMembers(getSortedMembers());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberData]);
+
+  function saveOrder(members: typeof memberData) {
+    const ids = members.map((d) => d.member.id);
+    localStorage.setItem(orderKey, JSON.stringify(ids));
+  }
+
+  // Drag-and-drop state
+  const dragIdx = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((i: number) => {
+    dragIdx.current = i;
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, i: number) => {
+    e.preventDefault();
+    setDragOverIdx(i);
+  }, []);
+
+  const handleDrop = useCallback((i: number) => {
+    const from = dragIdx.current;
+    if (from === null || from === i) {
+      dragIdx.current = null;
+      setDragOverIdx(null);
+      return;
+    }
+    setOrderedMembers((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(i, 0, moved);
+      saveOrder(next);
+      return next;
+    });
+    dragIdx.current = null;
+    setDragOverIdx(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    dragIdx.current = null;
+    setDragOverIdx(null);
+  }, []);
+
+  // --- Recent games: merge all members' matches, sorted by time ---
+  const recentGames = useMemo(() => {
+    const all: { match: ProcessedMatch; member: TeamMember }[] = [];
+    for (const data of memberData) {
+      for (const match of data.matches) {
+        all.push({ match, member: data.member });
+      }
+    }
+    all.sort((a, b) => b.match.gameCreation - a.match.gameCreation);
+    return all;
+  }, [memberData]);
+
+  // On successful add: clear search and scroll to new member
+  useEffect(() => {
+    if (memberData.length > prevMemberCount.current) {
+      setSearchKey((k) => k + 1);
+      requestAnimationFrame(() => {
+        lastMemberRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+    prevMemberCount.current = memberData.length;
+  }, [memberData.length]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -160,16 +312,14 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {isEditing ? (
-            <Form method="post" className="flex-shrink-0">
+            <Form ref={emojiFormRef} method="post" className="flex-shrink-0">
               <input type="hidden" name="intent" value="update-emoji" />
-              <input
-                type="text"
+              <EmojiPicker
                 name="emoji"
                 defaultValue={team.emoji ?? ""}
-                maxLength={2}
-                placeholder="+"
-                onBlur={(e) => e.target.form?.requestSubmit()}
-                className="h-10 w-10 rounded-lg border border-gray-200 bg-white text-center text-xl leading-none hover:border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600"
+                onChange={() => {
+                  requestAnimationFrame(() => emojiFormRef.current?.requestSubmit());
+                }}
               />
             </Form>
           ) : (
@@ -190,6 +340,47 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-300 dark:border-gray-600">
+            <Tooltip label="List">
+              <button
+                type="button"
+                onClick={() => switchLayout("list")}
+                className={`cursor-pointer rounded-l-lg px-2.5 py-1.5 ${
+                  layout === "list"
+                    ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
+                    : "text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
+                }`}
+              >
+                <ListIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Grid">
+              <button
+                type="button"
+                onClick={() => switchLayout("grid")}
+                className={`cursor-pointer border-x border-gray-300 px-2.5 py-1.5 dark:border-gray-600 ${
+                  layout === "grid"
+                    ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
+                    : "text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
+                }`}
+              >
+                <GridIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Recent games">
+              <button
+                type="button"
+                onClick={() => switchLayout("recent")}
+                className={`cursor-pointer rounded-r-lg px-2.5 py-1.5 ${
+                  layout === "recent"
+                    ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
+                    : "text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
+                }`}
+              >
+                <ClockIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          </div>
           <button
             type="button"
             onClick={() => setIsEditing(!isEditing)}
@@ -228,7 +419,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
         <div className="mb-8 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <Form method="post" className="flex gap-3">
             <input type="hidden" name="intent" value="add-member" />
-            <PlayerSearch version={version} />
+            <PlayerSearch key={searchKey} version={version} />
             <button
               type="submit"
               className="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
@@ -245,21 +436,94 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
       )}
 
       {/* Members */}
-      {memberData.length === 0 ? (
+      {orderedMembers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-900">
           <p className="text-gray-500 dark:text-gray-400">
             No members yet. Click Edit to add players using their Riot ID.
           </p>
         </div>
-      ) : (
+      ) : layout === "recent" ? (
+        <div className="space-y-1.5">
+          {recentGames.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-900">
+              <p className="text-gray-500 dark:text-gray-400">
+                No recent matches found
+              </p>
+            </div>
+          ) : (
+            recentGames.map(({ match, member }) => (
+              <div key={`${member.id}-${match.matchId}`}>
+                <div className="mb-0.5 flex items-center gap-1.5 pl-1">
+                  {member.profile_icon_id != null ? (
+                    <img
+                      src={profileIconUrl(version, member.profile_icon_id)}
+                      alt=""
+                      className="h-4 w-4 rounded-full"
+                    />
+                  ) : (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[8px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                      ?
+                    </span>
+                  )}
+                  <Link
+                    to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
+                    className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+                  >
+                    {member.game_name}
+                  </Link>
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                    {timeAgo(match.gameCreation)}
+                  </span>
+                </div>
+                <MatchCard match={match} version={version} />
+              </div>
+            ))
+          )}
+        </div>
+      ) : layout === "list" ? (
         <div className="space-y-6">
-          {memberData.map((data) => (
-            <MemberSection
+          {orderedMembers.map((data, i) => (
+            <div
               key={data.member.id}
-              data={data}
-              version={version}
-              isEditing={isEditing}
-            />
+              ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
+              draggable={isEditing}
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={() => handleDrop(i)}
+              onDragEnd={handleDragEnd}
+              className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
+                dragOverIdx === i ? "border-t-2 border-indigo-500" : ""
+              } transition-[border]`}
+            >
+              <MemberSection
+                data={data}
+                version={version}
+                isEditing={isEditing}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {orderedMembers.map((data, i) => (
+            <div
+              key={data.member.id}
+              ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
+              draggable={isEditing}
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={() => handleDrop(i)}
+              onDragEnd={handleDragEnd}
+              className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
+                dragOverIdx === i ? "ring-2 ring-indigo-500 rounded-lg" : ""
+              } transition-shadow`}
+            >
+              <MemberCard
+                data={data}
+                version={version}
+                isEditing={isEditing}
+              />
+            </div>
           ))}
         </div>
       )}

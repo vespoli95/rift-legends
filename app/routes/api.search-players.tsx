@@ -1,4 +1,4 @@
-import { searchMembers, searchCachedAccounts, getCachedSummoner } from "~/lib/db.server";
+import { searchMembers, searchCachedAccounts, searchMatchParticipants, getCachedSummoner } from "~/lib/db.server";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
@@ -54,52 +54,42 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Step 3: try Riot API lookup
-  // Riot API requires exact gameName#tagLine match
-  let gameName: string;
-  let tagsToTry: string[];
-
-  if (q.includes("#")) {
-    const [name, tag] = q.split("#", 2);
-    gameName = name;
-    tagsToTry = tag && tag.length >= 1 ? [tag] : [];
-  } else {
-    gameName = q;
-    // Try common tags when no tag specified
-    tagsToTry = ["NA1", "NA", "EUW", "EUNE", "KR", "BR", "LAN", "LAS", "OCE", "TR", "RU", "JP"];
+  // Step 3: search match participants (players seen in cached match data)
+  const matchResults = searchMatchParticipants(q);
+  for (const r of matchResults) {
+    addResult({
+      gameName: r.gameName,
+      tagLine: r.tagLine,
+      profileIconId: null,
+      source: "cached",
+    });
   }
 
-  if (gameName && gameName.length >= 2 && tagsToTry.length > 0) {
-    const lookups = tagsToTry.map(async (tag) => {
-      const key = `${gameName.toLowerCase()}#${tag.toLowerCase()}`;
-      if (seen.has(key)) return null;
-
-      try {
-        const account = await getAccountByRiotId(gameName, tag);
-        let profileIconId: number | null = null;
+  // Step 4: try Riot API lookup (requires exact gameName#tagLine)
+  if (q.includes("#")) {
+    const [gameName, tagLine] = q.split("#", 2);
+    if (gameName && gameName.length >= 2 && tagLine && tagLine.length >= 1) {
+      const key = `${gameName.toLowerCase()}#${tagLine.toLowerCase()}`;
+      if (!seen.has(key)) {
         try {
-          const summoner = await getSummonerByPuuid(account.puuid);
-          profileIconId = summoner.profileIconId;
+          const account = await getAccountByRiotId(gameName, tagLine);
+          let profileIconId: number | null = null;
+          try {
+            const summoner = await getSummonerByPuuid(account.puuid);
+            profileIconId = summoner.profileIconId;
+          } catch {
+            // Non-critical
+          }
+          addResult({
+            gameName: account.gameName,
+            tagLine: account.tagLine,
+            profileIconId,
+            source: "riot",
+          });
         } catch {
-          // Non-critical
+          // Not found
         }
-        return {
-          gameName: account.gameName,
-          tagLine: account.tagLine,
-          profileIconId,
-          source: "riot" as const,
-        };
-      } catch {
-        return null;
       }
-    });
-
-    const riotResults = (await Promise.all(lookups)).filter(
-      (r): r is SearchResult => r !== null
-    );
-
-    for (const r of riotResults) {
-      addResult(r);
     }
   }
 

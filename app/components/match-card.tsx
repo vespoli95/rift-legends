@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { ProcessedMatch } from "~/lib/types";
 import {
   championIconUrl,
@@ -6,7 +7,7 @@ import {
   SUMMONER_SPELL_MAP,
   QUEUE_TYPE_MAP,
 } from "~/lib/ddragon";
-import { formatKDA, kdaRatio, formatDuration, timeAgo } from "~/lib/utils";
+import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor } from "~/lib/utils";
 
 export function MatchCard({
   match,
@@ -22,10 +23,13 @@ export function MatchCard({
   const spell1 = SUMMONER_SPELL_MAP[match.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[match.summoner2Id] || "SummonerFlash";
   const queueName = QUEUE_TYPE_MAP[match.queueId] || "Game";
+  const score = riftScore(match);
+  const scoreColor = riftScoreColor(score);
 
   return (
-    <div
-      className={`flex items-center gap-3 rounded-lg border-l-4 px-3 py-2 ${bgClass}`}
+    <Link
+      to={`/matches/${match.matchId}`}
+      className={`flex items-center gap-3 rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
     >
       {/* Champion Icon + Level */}
       <div className="relative flex-shrink-0">
@@ -61,6 +65,21 @@ export function MatchCard({
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {kdaRatio(match.kills, match.deaths, match.assists)} KDA
         </p>
+      </div>
+
+      {/* Rift Score */}
+      <div className="min-w-[40px] flex-shrink-0 text-center">
+        <div className="flex items-center justify-center gap-1">
+          <p className={`text-sm font-bold ${scoreColor}`}>
+            {score.toFixed(1)}
+          </p>
+          {match.isMvp && (
+            <span className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white">
+              MVP
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">RS</p>
       </div>
 
       {/* CS */}
@@ -121,6 +140,6 @@ export function MatchCard({
           {queueName} &middot; {timeAgo(match.gameCreation)}
         </p>
       </div>
-    </div>
+    </Link>
   );
 }

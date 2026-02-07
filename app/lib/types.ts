@@ -65,6 +65,7 @@ export interface MatchParticipant {
   summoner1Id: number;
   summoner2Id: number;
   win: boolean;
+  teamPosition: string;
   totalDamageDealtToChampions: number;
   goldEarned: number;
 }
@@ -89,6 +90,7 @@ export interface ProcessedMatch {
   gameCreation: number;
   totalDamageDealtToChampions: number;
   goldEarned: number;
+  isMvp: boolean;
 }
 
 export interface RankedInfo {

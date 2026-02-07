@@ -169,7 +169,7 @@ export function PlayerSearch({ version }: { version: string }) {
         >
           {isLoading ? (
             <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-              {query.includes("#") ? "Checking Riot API..." : "Searching..."}
+              {query.includes("#") ? "Looking up Riot ID..." : "Searching..."}
             </div>
           ) : query.length === 0 && recentSearches.length > 0 ? (
             <>
@@ -219,8 +219,8 @@ export function PlayerSearch({ version }: { version: string }) {
           ) : results.length === 0 ? (
             <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
               {query.includes("#")
-                ? "No player found"
-                : "No matches — try a full Riot ID (e.g. Player#NA1)"}
+                ? "No player found — double-check the name and tag"
+                : "No local matches — type a full Riot ID with # tag to search (e.g. Player#NA1)"}
             </div>
           ) : (
             <ul>

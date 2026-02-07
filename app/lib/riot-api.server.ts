@@ -6,7 +6,7 @@ import type {
   TeamMember,
   MemberWithMatches,
 } from "./types";
-import { csPerMin } from "./utils";
+import { csPerMin, participantRiftScore } from "./utils";
 
 const RIOT_API_KEY = process.env.RIOT_API_KEY;
 console.log("RIOT_API_KEY loaded:", RIOT_API_KEY ? "Yes (length: " + RIOT_API_KEY.length + ")" : "No");
@@ -112,7 +112,6 @@ export async function getAccountByRiotId(
 // --- Summoner Lookup ---
 
 interface SummonerData {
-  id: string; // encrypted summoner ID
   profileIconId: number;
   summonerLevel: number;
 }
@@ -127,7 +126,6 @@ export async function getSummonerByPuuid(puuid: string): Promise<SummonerData> {
   const data = await res.json();
 
   const summoner: SummonerData = {
-    id: data.id,
     profileIconId: data.profileIconId,
     summonerLevel: data.summonerLevel,
   };
@@ -151,68 +149,37 @@ interface CachedRanked {
   data: RankedData | null;
 }
 
-export async function getRankedData(summonerId: string): Promise<RankedData | null> {
-  const cacheKey = `ranked:${summonerId}`;
+export async function getRankedByPuuid(puuid: string): Promise<RankedData | null> {
+  const cacheKey = `ranked:${puuid}`;
   const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
   if (cached) {
     return cached.data;
   }
 
-  const url = `${NA1_BASE}/lol/league/v4/entries/by-summoner/${summonerId}`;
-  console.log("Fetching ranked data for summoner:", summonerId);
-  const res = await riotFetch(url);
-  const entries = await res.json();
-  console.log("Ranked entries:", entries);
-
-  // Find solo/duo queue entry
-  const soloQueue = entries.find(
-    (e: { queueType: string }) => e.queueType === "RANKED_SOLO_5x5"
-  );
-
-  if (!soloQueue) {
-    console.log("No solo queue entry found");
-    cacheSet(cacheKey, { hasRank: false, data: null });
-    return null;
-  }
-
-  const ranked: RankedData = {
-    tier: soloQueue.tier,
-    rank: soloQueue.rank,
-    lp: soloQueue.leaguePoints,
-    wins: soloQueue.wins,
-    losses: soloQueue.losses,
-  };
-
-  console.log("Found ranked data:", ranked);
-  cacheSet(cacheKey, { hasRank: true, data: ranked });
-  return ranked;
-}
-
-export async function getRankedByPuuid(puuid: string): Promise<RankedData | null> {
   try {
-    // Always fetch fresh summoner data to ensure we have the ID
-    const url = `${NA1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`;
-    const cacheKey = `summoner:${puuid}`;
+    const url = `${NA1_BASE}/lol/league/v4/entries/by-puuid/${puuid}`;
+    const res = await riotFetch(url);
+    const entries = await res.json();
 
-    let summonerId: string;
-    const cached = cacheGet<SummonerData>(cacheKey, SUMMONER_TTL);
+    const soloQueue = entries.find(
+      (e: { queueType: string }) => e.queueType === "RANKED_SOLO_5x5"
+    );
 
-    if (cached?.id) {
-      summonerId = cached.id;
-    } else {
-      // Fetch fresh data
-      const res = await riotFetch(url);
-      const data = await res.json();
-      const newSummoner: SummonerData = {
-        id: data.id,
-        profileIconId: data.profileIconId,
-        summonerLevel: data.summonerLevel,
-      };
-      cacheSet(cacheKey, newSummoner);
-      summonerId = data.id;
+    if (!soloQueue) {
+      cacheSet(cacheKey, { hasRank: false, data: null });
+      return null;
     }
 
-    return await getRankedData(summonerId);
+    const ranked: RankedData = {
+      tier: soloQueue.tier,
+      rank: soloQueue.rank,
+      lp: soloQueue.leaguePoints,
+      wins: soloQueue.wins,
+      losses: soloQueue.losses,
+    };
+
+    cacheSet(cacheKey, { hasRank: true, data: ranked });
+    return ranked;
   } catch (error) {
     console.error("Failed to fetch ranked data:", error);
     return null;
@@ -267,7 +234,7 @@ export async function getProcessedMatch(
 
 // --- Match Detail ---
 
-async function getMatchDetail(matchId: string): Promise<MatchDetail> {
+export async function getMatchDetail(matchId: string): Promise<MatchDetail> {
   const cacheKey = `match:${matchId}`;
   const cached = cacheGet<MatchDetail>(cacheKey, MATCH_DETAIL_TTL);
   if (cached) return cached;
@@ -287,6 +254,12 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
   if (!participant) return null;
 
   const totalCs = participant.totalMinionsKilled + participant.neutralMinionsKilled;
+
+  // Compute MVP: highest rift score among all 10 participants
+  const playerScore = participantRiftScore(participant, match.info.gameDuration);
+  const isMvp = match.info.participants.every(
+    (p) => p.puuid === puuid || participantRiftScore(p, match.info.gameDuration) <= playerScore,
+  );
 
   return {
     matchId: match.metadata.matchId,
@@ -315,6 +288,7 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     gameCreation: match.info.gameCreation,
     totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
     goldEarned: participant.goldEarned,
+    isMvp,
   };
 }
 

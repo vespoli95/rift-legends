@@ -27,7 +27,7 @@ function formatRank(ranked: RankedInfo): string {
 function RankBadge({ ranked }: { ranked: RankedInfo }) {
   const colorClass = TIER_COLORS[ranked.tier] || "text-gray-500";
   return (
-    <span className={`text-xs font-medium ${colorClass}`}>
+    <span className={`text-xs font-medium ${colorClass}`} title="Ranked Solo/Duo">
       {formatRank(ranked)} · {ranked.lp} LP
     </span>
   );
@@ -128,10 +128,72 @@ export function MemberSection({
             to={playerUrl}
             className="block w-full cursor-pointer rounded-lg py-2 text-center text-sm text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
           >
-            View all {matches.length} games
+            View all games
           </Link>
         )}
       </div>
+    </div>
+  );
+}
+
+export function MemberCard({
+  data,
+  version,
+  isEditing = false,
+}: {
+  data: MemberWithMatches;
+  version: string;
+  isEditing?: boolean;
+}) {
+  const { member, matches, ranked } = data;
+  const playerUrl = `/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`;
+
+  const wins = matches.filter((m) => m.win).length;
+  const losses = matches.length - wins;
+
+  return (
+    <div className="relative rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      {isEditing && (
+        <Form method="post" className="absolute right-2 top-2">
+          <input type="hidden" name="intent" value="remove-member" />
+          <input type="hidden" name="memberId" value={member.id} />
+          <button
+            type="submit"
+            className="cursor-pointer rounded bg-red-100 p-1.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
+            title="Remove from team"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </Form>
+      )}
+      <Link to={playerUrl} className="flex flex-col items-center gap-2 hover:opacity-80">
+        {member.profile_icon_id != null ? (
+          <img
+            src={profileIconUrl(version, member.profile_icon_id)}
+            alt=""
+            className="h-14 w-14 rounded-full"
+          />
+        ) : (
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-200 text-lg text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+            ?
+          </span>
+        )}
+        <div className="text-center">
+          <h3 className="font-semibold text-gray-900 dark:text-white">
+            {member.game_name}
+          </h3>
+          <p className="text-xs text-gray-400 dark:text-gray-500">#{member.tag_line}</p>
+        </div>
+        {ranked && <RankBadge ranked={ranked} />}
+        {matches.length > 0 && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-green-600 dark:text-green-400">{wins}W</span>
+            {" "}
+            <span className="text-red-600 dark:text-red-400">{losses}L</span>
+            <span className="ml-1 text-gray-400">({matches.length} games)</span>
+          </p>
+        )}
+      </Link>
     </div>
   );
 }

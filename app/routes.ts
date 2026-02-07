@@ -5,5 +5,6 @@ export default [
   route("teams/new", "routes/teams.new.tsx"),
   route("teams/:slug", "routes/teams.$slug.tsx"),
   route("players/:gameName/:tagLine", "routes/players.$gameName.$tagLine.tsx"),
+  route("matches/:matchId", "routes/matches.$matchId.tsx"),
   route("api/search-players", "routes/api.search-players.tsx"),
 ] satisfies RouteConfig;
