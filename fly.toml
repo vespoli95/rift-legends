@@ -8,6 +8,9 @@ primary_region = 'yyz'
 
 [build]
 
+[env]
+  PORT = "8080"
+
 [processes]
   app = 'npm run start'
 
