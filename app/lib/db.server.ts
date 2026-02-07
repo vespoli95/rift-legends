@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Team, TeamWithCount, TeamMember } from "./types";
 
-const DB_PATH = path.join(process.cwd(), "data", "rift-legends.db");
+// Use /data on Fly.io (persistent volume), local data/ dir otherwise
+const DATA_DIR = fs.existsSync("/data") ? "/data" : path.join(process.cwd(), "data");
+const DB_PATH = path.join(DATA_DIR, "rift-legends.db");
 
 let db: Database.Database;
 

@@ -9,7 +9,7 @@ primary_region = 'yyz'
 [build]
 
 [processes]
-  app = 'node ./dbsetup.js npm run start'
+  app = 'npm run dev'
 
 [[mounts]]
   source = 'data'
@@ -27,7 +27,6 @@ primary_region = 'yyz'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
