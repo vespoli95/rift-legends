@@ -9,7 +9,7 @@ primary_region = 'yyz'
 [build]
 
 [processes]
-  app = 'npm run dev'
+  app = 'npm run start'
 
 [[mounts]]
   source = 'data'
