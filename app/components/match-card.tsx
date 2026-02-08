@@ -34,7 +34,7 @@ export function MatchCard({
   return (
     <Link
       to={`/matches/${match.matchId}`}
-      className={`flex items-center gap-3 rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
+      className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
     >
       {/* Champion Icon + Level */}
       <div className="relative flex-shrink-0">
@@ -83,21 +83,20 @@ export function MatchCard({
 
       {/* Rift Score */}
       <div className="min-w-[40px] flex-shrink-0 text-center">
-        <div className="flex items-center justify-center gap-1">
-          <p className={`text-sm font-bold ${scoreColor}`}>
-            {score.toFixed(1)}
-          </p>
-          {match.isMvp && (
-            <span className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white">
-              MVP
-            </span>
-          )}
-        </div>
-        <p className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">RS</p>
+        <p className={`text-sm font-bold ${scoreColor}`}>
+          {score.toFixed(1)}
+        </p>
+        {match.isMvp ? (
+          <span className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white">
+            MVP
+          </span>
+        ) : (
+          <p className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">RS</p>
+        )}
       </div>
 
       {/* CS */}
-      <div className="min-w-[55px] flex-shrink-0 text-center">
+      <div className="hidden min-w-[55px] flex-shrink-0 text-center sm:block">
         <p className="text-sm text-gray-700 dark:text-gray-300">
           {match.cs} CS
         </p>
@@ -141,7 +140,7 @@ export function MatchCard({
       </div>
 
       {/* Game Info */}
-      <div className="ml-auto flex-shrink-0 text-right">
+      <div className="ml-auto min-w-0 flex-shrink text-right">
         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
           {match.win ? "Victory" : "Defeat"}
         </p>
