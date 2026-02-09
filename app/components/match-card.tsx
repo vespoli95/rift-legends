@@ -164,7 +164,9 @@ export function MatchCard({
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {queueName}
-          {" "}&middot;{" "}
+          {POSITION_ICON[match.teamPosition] && (
+            <span className="sm:hidden">{" "}&middot;{" "}</span>
+          )}
           {POSITION_ICON[match.teamPosition] && (
             <img src={POSITION_ICON[match.teamPosition]} alt={match.teamPosition} className="mx-0.5 inline h-3 w-3 opacity-70 sm:hidden" />
           )}

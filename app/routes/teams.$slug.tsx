@@ -462,7 +462,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
           </p>
         </div>
       ) : layout === "recent" ? (
-        <div className="space-y-1.5">
+        <div className="space-y-3">
           {recentGames.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-900">
               <p className="text-gray-500 dark:text-gray-400">
