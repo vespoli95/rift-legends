@@ -101,6 +101,7 @@ function ParticipantRow({
   isMvp,
   ranked,
   sprites,
+  maxDamage,
 }: {
   participant: MatchParticipant;
   version: string;
@@ -108,6 +109,7 @@ function ParticipantRow({
   isMvp: boolean;
   ranked: RankedData | null;
   sprites: SpriteData;
+  maxDamage: number;
 }) {
   const spell1 = SUMMONER_SPELL_MAP[participant.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[participant.summoner2Id] || "SummonerFlash";
@@ -213,10 +215,16 @@ function ParticipantRow({
       </td>
 
       {/* Damage */}
-      <td className="hidden px-2 py-2 text-center md:table-cell">
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          {formatNumber(participant.totalDamageDealtToChampions)}
-        </p>
+      <td className="hidden px-2 py-2 md:table-cell">
+        <div className="relative mx-auto h-5 w-20 overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
+          <div
+            className={`absolute inset-y-0 left-0 rounded ${participant.win ? "bg-blue-400 dark:bg-blue-500" : "bg-red-400 dark:bg-red-500"}`}
+            style={{ width: `${maxDamage > 0 ? (participant.totalDamageDealtToChampions / maxDamage) * 100 : 0}%` }}
+          />
+          <span className="relative z-10 flex h-full items-center justify-center text-[10px] font-semibold text-gray-900 dark:text-white">
+            {formatNumber(participant.totalDamageDealtToChampions)}
+          </span>
+        </div>
       </td>
 
       {/* Gold */}
@@ -281,6 +289,7 @@ function TeamTable({
   rankedMap: Record<string, RankedData | null>;
   sprites: SpriteData;
 }) {
+  const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
   const borderColor = isWinner
     ? "border-l-blue-500 dark:border-l-blue-400"
     : "border-l-red-500 dark:border-l-red-400";
@@ -322,6 +331,7 @@ function TeamTable({
               isMvp={p.puuid === mvpPuuid}
               ranked={rankedMap[p.puuid] ?? null}
               sprites={sprites}
+              maxDamage={maxDamage}
             />
           ))}
         </tbody>
