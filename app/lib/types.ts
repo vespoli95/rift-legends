@@ -91,6 +91,7 @@ export interface ProcessedMatch {
   totalDamageDealtToChampions: number;
   goldEarned: number;
   isMvp: boolean;
+  teamPosition: string;
 }
 
 export interface RankedInfo {

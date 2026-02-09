@@ -297,6 +297,23 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
     return all;
   }, [memberData]);
 
+  const groupedRecentGames = useMemo(() => {
+    const groups: { matchId: string; entries: typeof recentGames }[] = [];
+    const seen = new Map<string, (typeof groups)[0]>();
+
+    for (const entry of recentGames) {
+      const existing = seen.get(entry.match.matchId);
+      if (existing) {
+        existing.entries.push(entry);
+      } else {
+        const group = { matchId: entry.match.matchId, entries: [entry] };
+        groups.push(group);
+        seen.set(entry.match.matchId, group);
+      }
+    }
+    return groups;
+  }, [recentGames]);
+
   // On successful add: clear search and scroll to new member
   useEffect(() => {
     if (memberData.length > prevMemberCount.current) {
@@ -453,33 +470,94 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
               </p>
             </div>
           ) : (
-            recentGames.map(({ match, member }) => (
-              <div key={`${member.id}-${match.matchId}`}>
-                <div className="mb-0.5 flex items-center gap-1.5 pl-1">
-                  {member.profile_icon_id != null ? (
-                    <img
-                      src={profileIconUrl(version, member.profile_icon_id)}
-                      alt=""
-                      className="h-4 w-4 rounded-full"
-                    />
-                  ) : (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[8px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                      ?
+            groupedRecentGames.map((group) =>
+              group.entries.length > 1 ? (
+                <div
+                  key={group.matchId}
+                  className="rounded-lg border border-amber-400 bg-amber-50/20 dark:border-amber-600 dark:bg-amber-950/10"
+                >
+                  <div className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                      Team game
                     </span>
-                  )}
-                  <Link
-                    to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
-                    className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
-                  >
-                    {member.game_name}
-                  </Link>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                    {timeAgo(match.gameCreation)}
-                  </span>
+                    <div className="flex -space-x-1.5">
+                      {group.entries.map(({ member }) =>
+                        member.profile_icon_id != null ? (
+                          <img
+                            key={member.id}
+                            src={profileIconUrl(version, member.profile_icon_id)}
+                            alt={member.game_name}
+                            className="h-5 w-5 rounded-full ring-2 ring-amber-50 dark:ring-amber-950"
+                          />
+                        ) : (
+                          <span
+                            key={member.id}
+                            className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[9px] text-gray-500 ring-2 ring-amber-50 dark:bg-gray-700 dark:text-gray-400 dark:ring-amber-950"
+                          >
+                            ?
+                          </span>
+                        ),
+                      )}
+                    </div>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {timeAgo(group.entries[0].match.gameCreation)}
+                    </span>
+                  </div>
+                  <div className="space-y-1 px-2 pb-2">
+                    {group.entries.map(({ match, member }) => (
+                      <div key={member.id}>
+                        <div className="mb-0.5 flex items-center gap-1.5 pl-1">
+                          {member.profile_icon_id != null ? (
+                            <img
+                              src={profileIconUrl(version, member.profile_icon_id)}
+                              alt=""
+                              className="h-4 w-4 rounded-full"
+                            />
+                          ) : (
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[8px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                              ?
+                            </span>
+                          )}
+                          <Link
+                            to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
+                            className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+                          >
+                            {member.game_name}
+                          </Link>
+                        </div>
+                        <MatchCard match={match} version={version} sprites={sprites} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <MatchCard match={match} version={version} sprites={sprites} />
-              </div>
-            ))
+              ) : (
+                <div key={group.matchId}>
+                  <div className="mb-0.5 flex items-center gap-1.5 pl-1">
+                    {group.entries[0].member.profile_icon_id != null ? (
+                      <img
+                        src={profileIconUrl(version, group.entries[0].member.profile_icon_id)}
+                        alt=""
+                        className="h-4 w-4 rounded-full"
+                      />
+                    ) : (
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[8px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        ?
+                      </span>
+                    )}
+                    <Link
+                      to={`/players/${encodeURIComponent(group.entries[0].member.game_name)}/${encodeURIComponent(group.entries[0].member.tag_line)}`}
+                      className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+                    >
+                      {group.entries[0].member.game_name}
+                    </Link>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {timeAgo(group.entries[0].match.gameCreation)}
+                    </span>
+                  </div>
+                  <MatchCard match={group.entries[0].match} version={version} sprites={sprites} />
+                </div>
+              ),
+            )
           )}
         </div>
       ) : layout === "list" ? (

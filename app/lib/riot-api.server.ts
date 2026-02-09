@@ -289,6 +289,7 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
     goldEarned: participant.goldEarned,
     isMvp,
+    teamPosition: participant.teamPosition,
   };
 }
 

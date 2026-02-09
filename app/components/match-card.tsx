@@ -8,6 +8,14 @@ import {
 import type { SpriteData } from "~/lib/ddragon";
 import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor } from "~/lib/utils";
 
+const POSITION_ICON: Record<string, string> = {
+  TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
+  JUNGLE: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
+  MIDDLE: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-middle.svg",
+  BOTTOM: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-bottom.svg",
+  UTILITY: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-utility.svg",
+};
+
 export function MatchCard({
   match,
   version,
@@ -70,6 +78,13 @@ export function MatchCard({
           <div className="h-5 w-5 rounded bg-gray-300 dark:bg-gray-700" />
         )}
       </div>
+
+      {/* Role (desktop) */}
+      {POSITION_ICON[match.teamPosition] && (
+        <div className="hidden flex-shrink-0 sm:block">
+          <img src={POSITION_ICON[match.teamPosition]} alt={match.teamPosition} className="h-5 w-5 opacity-70" />
+        </div>
+      )}
 
       {/* KDA */}
       <div className="min-w-[70px] flex-shrink-0 text-center">
@@ -148,7 +163,12 @@ export function MatchCard({
           {formatDuration(match.gameDuration)}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {queueName} &middot; {timeAgo(match.gameCreation)}
+          {queueName}
+          {" "}&middot;{" "}
+          {POSITION_ICON[match.teamPosition] && (
+            <img src={POSITION_ICON[match.teamPosition]} alt={match.teamPosition} className="mx-0.5 inline h-3 w-3 opacity-70 sm:hidden" />
+          )}
+          {" "}&middot; {timeAgo(match.gameCreation)}
         </p>
       </div>
     </Link>
