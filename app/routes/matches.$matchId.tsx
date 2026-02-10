@@ -102,6 +102,7 @@ function ParticipantRow({
   ranked,
   sprites,
   maxDamage,
+  maxDamageTaken,
 }: {
   participant: MatchParticipant;
   version: string;
@@ -110,6 +111,7 @@ function ParticipantRow({
   ranked: RankedData | null;
   sprites: SpriteData;
   maxDamage: number;
+  maxDamageTaken: number;
 }) {
   const spell1 = SUMMONER_SPELL_MAP[participant.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[participant.summoner2Id] || "SummonerFlash";
@@ -227,6 +229,19 @@ function ParticipantRow({
         </div>
       </td>
 
+      {/* Damage Taken */}
+      <td className="hidden px-2 py-2 md:table-cell">
+        <div className="relative mx-auto h-5 w-20 overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
+          <div
+            className="absolute inset-y-0 left-0 rounded bg-emerald-400 dark:bg-emerald-500"
+            style={{ width: `${maxDamageTaken > 0 ? (participant.totalDamageTaken / maxDamageTaken) * 100 : 0}%` }}
+          />
+          <span className="relative z-10 flex h-full items-center justify-center text-[10px] font-semibold text-gray-900 dark:text-white">
+            {formatNumber(participant.totalDamageTaken)}
+          </span>
+        </div>
+      </td>
+
       {/* Gold */}
       <td className="hidden px-2 py-2 text-center md:table-cell">
         <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -290,6 +305,7 @@ function TeamTable({
   sprites: SpriteData;
 }) {
   const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
+  const maxDamageTaken = Math.max(...participants.map((p) => p.totalDamageTaken));
   const borderColor = isWinner
     ? "border-l-blue-500 dark:border-l-blue-400"
     : "border-l-red-500 dark:border-l-red-400";
@@ -316,6 +332,7 @@ function TeamTable({
             <th className="px-2 py-1 text-center font-medium">RS</th>
             <th className="hidden px-2 py-1 text-center font-medium sm:table-cell">CS</th>
             <th className="hidden px-2 py-1 text-center font-medium md:table-cell">DMG</th>
+            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Taken</th>
             <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Gold</th>
             <th className="hidden px-2 py-1 text-center font-medium lg:table-cell">Vision</th>
             <th className="hidden py-1 pl-2 pr-3 text-left font-medium lg:table-cell">Items</th>
@@ -332,6 +349,7 @@ function TeamTable({
               ranked={rankedMap[p.puuid] ?? null}
               sprites={sprites}
               maxDamage={maxDamage}
+              maxDamageTaken={maxDamageTaken}
             />
           ))}
         </tbody>

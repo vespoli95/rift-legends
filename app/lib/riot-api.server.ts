@@ -287,6 +287,7 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     queueId: match.info.queueId,
     gameCreation: match.info.gameCreation,
     totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
+    totalDamageTaken: participant.totalDamageTaken,
     goldEarned: participant.goldEarned,
     isMvp,
     teamPosition: participant.teamPosition,

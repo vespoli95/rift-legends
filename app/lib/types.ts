@@ -67,6 +67,7 @@ export interface MatchParticipant {
   win: boolean;
   teamPosition: string;
   totalDamageDealtToChampions: number;
+  totalDamageTaken: number;
   goldEarned: number;
 }
 
@@ -89,6 +90,7 @@ export interface ProcessedMatch {
   queueId: number;
   gameCreation: number;
   totalDamageDealtToChampions: number;
+  totalDamageTaken: number;
   goldEarned: number;
   isMvp: boolean;
   teamPosition: string;

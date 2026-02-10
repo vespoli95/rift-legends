@@ -59,10 +59,10 @@ export function riftScore(match: {
   totalDamageDealtToChampions: number;
   goldEarned: number;
   gameDuration: number;
-  role?: string;
+  teamPosition?: string;
 }): number {
   const minutes = match.gameDuration / 60 || 1;
-  const isSupport = match.role === "UTILITY";
+  const isSupport = match.teamPosition === "UTILITY";
 
   // KDA component (0-10): diminishing returns via log curve
   const kdaVal = match.deaths === 0
@@ -124,7 +124,7 @@ export function participantRiftScore(
     totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
     goldEarned: participant.goldEarned,
     gameDuration,
-    role: participant.teamPosition,
+    teamPosition: participant.teamPosition,
   });
 }
 
