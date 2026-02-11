@@ -111,13 +111,23 @@ async function riotFetchInner(url: string, attempt = 1, rateLimitRetries = 0): P
   // Rate limited - wait and retry (with a cap!)
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") || "2", 10);
+    const limitType = res.headers.get("X-Rate-Limit-Type") || "unknown";
+    const appCount = res.headers.get("X-App-Rate-Limit-Count");
+    const appLimit = res.headers.get("X-App-Rate-Limit");
+    const methodCount = res.headers.get("X-Method-Rate-Limit-Count");
+    const methodLimit = res.headers.get("X-Method-Rate-Limit");
     console.warn(
-      `[riot-api] 429 rate limited on ${tag}, Retry-After: ${retryAfter}s ` +
-      `(rate-limit retry ${rateLimitRetries + 1}/${MAX_RATE_LIMIT_RETRIES})`
+      `[riot-api] 429 RATE LIMITED on ${tag}\n` +
+      `  type: ${limitType}, Retry-After: ${retryAfter}s\n` +
+      `  app: ${appCount} / ${appLimit}\n` +
+      `  method: ${methodCount} / ${methodLimit}\n` +
+      `  retry ${rateLimitRetries + 1}/${MAX_RATE_LIMIT_RETRIES}`
     );
     if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
+      console.error(`[riot-api] 429 MAX RETRIES EXCEEDED on ${tag} — giving up`);
       throw new RiotApiError("Rate limited by Riot API (max retries exceeded)", 429);
     }
+    console.log(`[riot-api] sleeping ${retryAfter}s before retry...`);
     await sleep(retryAfter * 1000);
     return riotFetchInner(url, attempt, rateLimitRetries + 1);
   }
@@ -150,6 +160,57 @@ async function riotFetchInner(url: string, attempt = 1, rateLimitRetries = 0): P
   return res;
 }
 
+function logRateLimitHeaders(res: Response, tag: string) {
+  const appLimit = res.headers.get("X-App-Rate-Limit");
+  const appCount = res.headers.get("X-App-Rate-Limit-Count");
+  const methodLimit = res.headers.get("X-Method-Rate-Limit");
+  const methodCount = res.headers.get("X-Method-Rate-Limit-Count");
+
+  if (!appLimit || !appCount) return;
+
+  // Parse "20:1,100:120" format — check each bucket
+  const limits = appLimit.split(",");
+  const counts = appCount.split(",");
+  for (let i = 0; i < limits.length; i++) {
+    const [limitVal] = (limits[i] || "").split(":");
+    const [countVal] = (counts[i] || "").split(":");
+    const limit = parseInt(limitVal, 10);
+    const count = parseInt(countVal, 10);
+    if (!limit || !count) continue;
+    const pct = count / limit;
+    if (pct >= 0.9) {
+      console.warn(
+        `[riot-api] APP RATE LIMIT WARNING: ${count}/${limit} (${Math.round(pct * 100)}%) on ${tag}`
+      );
+    }
+  }
+
+  // Same check for method rate limits
+  if (methodLimit && methodCount) {
+    const mLimits = methodLimit.split(",");
+    const mCounts = methodCount.split(",");
+    for (let i = 0; i < mLimits.length; i++) {
+      const [limitVal] = (mLimits[i] || "").split(":");
+      const [countVal] = (mCounts[i] || "").split(":");
+      const limit = parseInt(limitVal, 10);
+      const count = parseInt(countVal, 10);
+      if (!limit || !count) continue;
+      const pct = count / limit;
+      if (pct >= 0.9) {
+        console.warn(
+          `[riot-api] METHOD RATE LIMIT WARNING: ${count}/${limit} (${Math.round(pct * 100)}%) on ${tag}`
+        );
+      }
+    }
+  }
+
+  console.log(
+    `[riot-api] rate limits — app: ${appCount} / ${appLimit}` +
+    (methodLimit ? `, method: ${methodCount} / ${methodLimit}` : "") +
+    ` | ${tag}`
+  );
+}
+
 async function riotFetch(url: string): Promise<Response> {
   const tag = urlTag(url);
   const { active, queued } = riotSemaphore.stats;
@@ -161,6 +222,7 @@ async function riotFetch(url: string): Promise<Response> {
   try {
     const res = await riotFetchInner(url);
     console.log(`[riot-api] ${res.status} ${tag} (${Date.now() - start}ms)`);
+    logRateLimitHeaders(res, tag);
     return res;
   } catch (err) {
     console.error(`[riot-api] FAILED ${tag} (${Date.now() - start}ms):`, err instanceof Error ? err.message : err);

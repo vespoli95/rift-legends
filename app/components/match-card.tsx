@@ -109,12 +109,10 @@ export function MatchCard({
           <span className="rounded bg-indigo-500 px-1 py-0.5 text-[10px] font-bold text-white">
             {ordinalSuffix(match.gameRank)}
           </span>
-        ) : match.gameRank <= 5 ? (
-          <span className="rounded bg-gray-400 px-1 py-0.5 text-[10px] font-bold text-white dark:bg-gray-600">
+        ) : (
+          <span className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">
             {ordinalSuffix(match.gameRank)}
           </span>
-        ) : (
-          <p className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">RS</p>
         )}
       </div>
 
