@@ -267,7 +267,7 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
 
 // --- Match IDs ---
 
-async function getMatchIds(puuid: string, count = 10, start = 0): Promise<string[]> {
+async function getMatchIds(puuid: string, count = 3, start = 0): Promise<string[]> {
   const cacheKey = `matches:${puuid}:${start}:${count}`;
   const cached = cacheGet<string[]>(cacheKey, MATCH_LIST_TTL);
   if (cached) return cached;
@@ -282,7 +282,7 @@ async function getMatchIds(puuid: string, count = 10, start = 0): Promise<string
 
 export async function getMatchIdsForMember(
   member: TeamMember,
-  count = 10,
+  count = 3,
   start = 0
 ): Promise<string[]> {
   const puuid =
