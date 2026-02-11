@@ -19,6 +19,41 @@ const RANKED_TTL = 30 * 60;             // 30min
 const MATCH_LIST_TTL = 5 * 60;          // 5min
 const MATCH_DETAIL_TTL = 7 * 24 * 60 * 60; // 7 days
 
+// --- Concurrency Limiter ---
+
+class Semaphore {
+  private queue: (() => void)[] = [];
+  private active = 0;
+  constructor(private max: number) {}
+
+  get stats() {
+    return { active: this.active, queued: this.queue.length, max: this.max };
+  }
+
+  async acquire(): Promise<void> {
+    if (this.active < this.max) {
+      this.active++;
+      return;
+    }
+    const { active, queued } = this.stats;
+    console.log(`[riot-api] semaphore full (${active}/${this.max}), queued: ${queued + 1}`);
+    return new Promise<void>((resolve) => {
+      this.queue.push(() => {
+        this.active++;
+        resolve();
+      });
+    });
+  }
+
+  release(): void {
+    this.active--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+const riotSemaphore = new Semaphore(5);
+
 // --- Error Classes ---
 
 export class RiotApiError extends Error {
@@ -34,16 +69,29 @@ export class RiotApiError extends Error {
 // --- Core Fetch ---
 
 const MAX_RETRIES = 3;
+const MAX_RATE_LIMIT_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function riotFetch(url: string, attempt = 1): Promise<Response> {
+function urlTag(url: string): string {
+  // Extract the meaningful part: e.g. "/lol/match/v5/matches/NA1_123"
+  try {
+    const { pathname } = new URL(url);
+    return pathname.length > 60 ? pathname.slice(0, 60) + "..." : pathname;
+  } catch {
+    return url.slice(0, 60);
+  }
+}
+
+async function riotFetchInner(url: string, attempt = 1, rateLimitRetries = 0): Promise<Response> {
   if (!RIOT_API_KEY) {
     throw new RiotApiError("RIOT_API_KEY is not configured", 403);
   }
+
+  const tag = urlTag(url);
 
   let res: Response;
   try {
@@ -52,24 +100,35 @@ async function riotFetch(url: string, attempt = 1): Promise<Response> {
     });
   } catch (error) {
     // Network error - retry
+    console.warn(`[riot-api] network error on ${tag} (attempt ${attempt}/${MAX_RETRIES})`);
     if (attempt < MAX_RETRIES) {
       await sleep(RETRY_DELAY_MS * attempt);
-      return riotFetch(url, attempt + 1);
+      return riotFetchInner(url, attempt + 1, rateLimitRetries);
     }
     throw new RiotApiError("Network error: failed to reach Riot API", 0);
   }
 
-  // Rate limited - wait and retry
+  // Rate limited - wait and retry (with a cap!)
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") || "2", 10);
+    console.warn(
+      `[riot-api] 429 rate limited on ${tag}, Retry-After: ${retryAfter}s ` +
+      `(rate-limit retry ${rateLimitRetries + 1}/${MAX_RATE_LIMIT_RETRIES})`
+    );
+    if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
+      throw new RiotApiError("Rate limited by Riot API (max retries exceeded)", 429);
+    }
     await sleep(retryAfter * 1000);
-    return riotFetch(url, attempt);
+    return riotFetchInner(url, attempt, rateLimitRetries + 1);
   }
 
   // Server error (5xx) - retry
-  if (res.status >= 500 && attempt < MAX_RETRIES) {
-    await sleep(RETRY_DELAY_MS * attempt);
-    return riotFetch(url, attempt + 1);
+  if (res.status >= 500) {
+    console.warn(`[riot-api] ${res.status} on ${tag} (attempt ${attempt}/${MAX_RETRIES})`);
+    if (attempt < MAX_RETRIES) {
+      await sleep(RETRY_DELAY_MS * attempt);
+      return riotFetchInner(url, attempt + 1, rateLimitRetries);
+    }
   }
 
   if (res.status === 401) {
@@ -89,6 +148,26 @@ async function riotFetch(url: string, attempt = 1): Promise<Response> {
   }
 
   return res;
+}
+
+async function riotFetch(url: string): Promise<Response> {
+  const tag = urlTag(url);
+  const { active, queued } = riotSemaphore.stats;
+  if (queued > 0) {
+    console.log(`[riot-api] waiting for semaphore slot: ${tag} (active: ${active}, queued: ${queued})`);
+  }
+  await riotSemaphore.acquire();
+  const start = Date.now();
+  try {
+    const res = await riotFetchInner(url);
+    console.log(`[riot-api] ${res.status} ${tag} (${Date.now() - start}ms)`);
+    return res;
+  } catch (err) {
+    console.error(`[riot-api] FAILED ${tag} (${Date.now() - start}ms):`, err instanceof Error ? err.message : err);
+    throw err;
+  } finally {
+    riotSemaphore.release();
+  }
 }
 
 // --- Account Lookup ---
@@ -224,27 +303,38 @@ export async function getProcessedMatch(
   matchId: string,
   puuid: string
 ): Promise<ProcessedMatch | null> {
-  try {
-    const match = await getMatchDetail(matchId);
-    return processMatch(match, puuid);
-  } catch {
-    return null;
-  }
+  const match = await getMatchDetail(matchId);
+  return processMatch(match, puuid);
 }
 
-// --- Match Detail ---
+// --- Match Detail (with in-flight dedup) ---
 
-export async function getMatchDetail(matchId: string): Promise<MatchDetail> {
+const inflightMatches = new Map<string, Promise<MatchDetail>>();
+
+export function getMatchDetail(matchId: string): Promise<MatchDetail> {
   const cacheKey = `match:${matchId}`;
   const cached = cacheGet<MatchDetail>(cacheKey, MATCH_DETAIL_TTL);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
 
-  const url = `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}`;
-  const res = await riotFetch(url);
-  const data: MatchDetail = await res.json();
+  // If a fetch for this match is already in progress, reuse it
+  const inflight = inflightMatches.get(matchId);
+  if (inflight) {
+    console.log(`[riot-api] dedup hit for ${matchId}`);
+    return inflight;
+  }
 
-  cacheSet(cacheKey, data);
-  return data;
+  const promise = (async () => {
+    const url = `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}`;
+    const res = await riotFetch(url);
+    const data: MatchDetail = await res.json();
+    cacheSet(cacheKey, data);
+    return data;
+  })().finally(() => {
+    inflightMatches.delete(matchId);
+  });
+
+  inflightMatches.set(matchId, promise);
+  return promise;
 }
 
 // --- Process Match ---
@@ -255,11 +345,12 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
 
   const totalCs = participant.totalMinionsKilled + participant.neutralMinionsKilled;
 
-  // Compute MVP: highest rift score among all 10 participants
+  // Compute rank: count how many players scored strictly higher
   const playerScore = participantRiftScore(participant, match.info.gameDuration);
-  const isMvp = match.info.participants.every(
-    (p) => p.puuid === puuid || participantRiftScore(p, match.info.gameDuration) <= playerScore,
-  );
+  const higherCount = match.info.participants.filter(
+    (p) => participantRiftScore(p, match.info.gameDuration) > playerScore,
+  ).length;
+  const gameRank = higherCount + 1;
 
   return {
     matchId: match.metadata.matchId,
@@ -289,7 +380,7 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
     totalDamageTaken: participant.totalDamageTaken,
     goldEarned: participant.goldEarned,
-    isMvp,
+    gameRank,
     teamPosition: participant.teamPosition,
   };
 }
@@ -299,6 +390,10 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
 export async function getMemberMatchHistory(
   member: TeamMember
 ): Promise<MemberWithMatches> {
+  const memberTag = `${member.game_name}#${member.tag_line}`;
+  const t0 = Date.now();
+  console.log(`[riot-api] loading history for ${memberTag}`);
+
   try {
     const puuid =
       member.puuid ||
@@ -310,11 +405,16 @@ export async function getMemberMatchHistory(
       getRankedByPuuid(puuid),
     ]);
 
+    console.log(`[riot-api] ${memberTag}: fetching ${matchIds.length} match details`);
+
+    let failedCount = 0;
     const matchDetails = await Promise.all(
       matchIds.map(async (id) => {
         try {
           return await getMatchDetail(id);
-        } catch {
+        } catch (err) {
+          failedCount++;
+          console.warn(`[riot-api] ${memberTag}: match ${id} failed:`, err instanceof Error ? err.message : err);
           return null;
         }
       })
@@ -325,12 +425,24 @@ export async function getMemberMatchHistory(
       .map((m) => processMatch(m, puuid))
       .filter((m): m is ProcessedMatch => m !== null);
 
-    return { member, matches, ranked };
+    let error: string | undefined;
+    if (failedCount > 0 && matches.length > 0) {
+      error = `Loaded ${matches.length} of ${matchIds.length} matches (${failedCount} failed)`;
+    } else if (failedCount > 0 && matches.length === 0) {
+      error = "All matches failed to load — try again shortly";
+    }
+
+    console.log(
+      `[riot-api] ${memberTag}: done in ${Date.now() - t0}ms — ` +
+      `${matches.length} matches loaded, ${failedCount} failed`
+    );
+    return { member, matches, ranked, error };
   } catch (error) {
     const message =
       error instanceof RiotApiError
         ? error.message
         : "Failed to load match history";
+    console.error(`[riot-api] ${memberTag}: fatal error in ${Date.now() - t0}ms — ${message}`);
     return { member, matches: [], error: message };
   }
 }

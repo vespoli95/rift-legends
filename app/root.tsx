@@ -31,6 +31,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <body>
         <Nav />
         {children}
+        <footer className="mx-auto max-w-6xl px-4 py-8 mt-12 border-t border-gray-200 dark:border-gray-800">
+          <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+            Rift Legends isn't endorsed by Riot Games and doesn't reflect the
+            views or opinions of Riot Games or anyone officially involved in
+            producing or managing Riot Games properties. Riot Games, and all
+            associated properties are trademarks or registered trademarks of
+            Riot Games, Inc. Metrics such as "Rift Score" are fan-made
+            calculations and are not official Riot Games statistics.
+          </p>
+        </footer>
         <ScrollRestoration />
         <Scripts />
       </body>

@@ -92,7 +92,7 @@ export interface ProcessedMatch {
   totalDamageDealtToChampions: number;
   totalDamageTaken: number;
   goldEarned: number;
-  isMvp: boolean;
+  gameRank: number;
   teamPosition: string;
 }
 

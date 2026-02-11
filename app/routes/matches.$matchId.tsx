@@ -16,6 +16,7 @@ import {
   timeAgo,
   participantRiftScore,
   riftScoreColor,
+  ordinalSuffix,
 } from "~/lib/utils";
 import type { MatchParticipant } from "~/lib/types";
 
@@ -40,13 +41,16 @@ export async function loader({ params }: Route.LoaderArgs) {
     score: participantRiftScore(p, match.info.gameDuration),
   }));
 
-  const mvpPuuid = scores.reduce((best, cur) =>
-    cur.score > best.score ? cur : best,
-  ).puuid;
-
   const scoreMap: Record<string, number> = {};
   for (const s of scores) {
     scoreMap[s.puuid] = s.score;
+  }
+
+  // Compute rank for each participant (ties get same rank)
+  const rankMap: Record<string, number> = {};
+  for (const s of scores) {
+    const higherCount = scores.filter((o) => o.score > s.score).length;
+    rankMap[s.puuid] = higherCount + 1;
   }
 
   // Fetch ranked data and sprite data in parallel
@@ -68,7 +72,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     rankedMap[r.puuid] = r.ranked;
   }
 
-  return { match, version, scoreMap, mvpPuuid, rankedMap, sprites };
+  return { match, version, scoreMap, rankMap, rankedMap, sprites };
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -98,7 +102,7 @@ function ParticipantRow({
   participant,
   version,
   score,
-  isMvp,
+  rank,
   ranked,
   sprites,
   maxDamage,
@@ -107,7 +111,7 @@ function ParticipantRow({
   participant: MatchParticipant;
   version: string;
   score: number;
-  isMvp: boolean;
+  rank: number;
   ranked: RankedData | null;
   sprites: SpriteData;
   maxDamage: number;
@@ -191,17 +195,25 @@ function ParticipantRow({
         </p>
       </td>
 
-      {/* Rift Score + MVP */}
+      {/* Rift Score + Rank */}
       <td className="px-2 py-2 text-center">
         <div className="flex items-center justify-center gap-1">
           <span className={`text-sm font-bold ${scoreColor}`}>
             {score.toFixed(1)}
           </span>
-          {isMvp && (
+          {rank === 1 ? (
             <span className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white">
               MVP
             </span>
-          )}
+          ) : rank <= 3 ? (
+            <span className="rounded bg-indigo-500 px-1 py-0.5 text-[10px] font-bold text-white">
+              {ordinalSuffix(rank)}
+            </span>
+          ) : rank <= 5 ? (
+            <span className="rounded bg-gray-400 px-1 py-0.5 text-[10px] font-bold text-white dark:bg-gray-600">
+              {ordinalSuffix(rank)}
+            </span>
+          ) : null}
         </div>
         <p
           className="text-[10px] text-gray-400 dark:text-gray-500"
@@ -291,7 +303,7 @@ function TeamTable({
   participants,
   version,
   scoreMap,
-  mvpPuuid,
+  rankMap,
   isWinner,
   rankedMap,
   sprites,
@@ -299,11 +311,15 @@ function TeamTable({
   participants: MatchParticipant[];
   version: string;
   scoreMap: Record<string, number>;
-  mvpPuuid: string;
+  rankMap: Record<string, number>;
   isWinner: boolean;
   rankedMap: Record<string, RankedData | null>;
   sprites: SpriteData;
 }) {
+  // Sort participants by rift score descending
+  const sorted = [...participants].sort(
+    (a, b) => (scoreMap[b.puuid] ?? 0) - (scoreMap[a.puuid] ?? 0),
+  );
   const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
   const maxDamageTaken = Math.max(...participants.map((p) => p.totalDamageTaken));
   const borderColor = isWinner
@@ -339,13 +355,13 @@ function TeamTable({
           </tr>
         </thead>
         <tbody>
-          {participants.map((p) => (
+          {sorted.map((p) => (
             <ParticipantRow
               key={p.puuid}
               participant={p}
               version={version}
               score={scoreMap[p.puuid] ?? 0}
-              isMvp={p.puuid === mvpPuuid}
+              rank={rankMap[p.puuid] ?? 10}
               ranked={rankedMap[p.puuid] ?? null}
               sprites={sprites}
               maxDamage={maxDamage}
@@ -359,7 +375,7 @@ function TeamTable({
 }
 
 export default function MatchDetail({ loaderData }: Route.ComponentProps) {
-  const { match, version, scoreMap, mvpPuuid, rankedMap, sprites } = loaderData;
+  const { match, version, scoreMap, rankMap, rankedMap, sprites } = loaderData;
   const { info } = match;
 
   const queueName = QUEUE_TYPE_MAP[info.queueId] || "Game";
@@ -393,7 +409,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           participants={blueSide}
           version={version}
           scoreMap={scoreMap}
-          mvpPuuid={mvpPuuid}
+          rankMap={rankMap}
           isWinner={blueWon}
           rankedMap={rankedMap}
           sprites={sprites}
@@ -402,7 +418,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           participants={redSide}
           version={version}
           scoreMap={scoreMap}
-          mvpPuuid={mvpPuuid}
+          rankMap={rankMap}
           isWinner={!blueWon}
           rankedMap={rankedMap}
           sprites={sprites}

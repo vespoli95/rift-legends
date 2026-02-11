@@ -13,13 +13,17 @@ import { getCurrentVersion, getSpriteData } from "~/lib/ddragon.server";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
-  getMemberMatchHistory,
   RiotApiError,
 } from "~/lib/riot-api.server";
 import { parseRiotId, timeAgo } from "~/lib/utils";
 import { profileIconUrl } from "~/lib/ddragon";
 import type { SpriteData } from "~/lib/ddragon";
-import { MemberSection, MemberCard } from "~/components/member-section";
+import {
+  MemberSection,
+  MemberSectionSkeleton,
+  MemberCard,
+  MemberCardSkeleton,
+} from "~/components/member-section";
 import { MatchCard } from "~/components/match-card";
 import { PlayerSearch } from "~/components/player-search";
 import { EmojiPicker } from "~/components/emoji-picker";
@@ -45,12 +49,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     // Fall back to a reasonable default
   }
 
-  const [memberData, sprites] = await Promise.all([
-    Promise.all(members.map((member) => getMemberMatchHistory(member))),
-    getSpriteData(version),
-  ]);
+  const sprites = await getSpriteData(version);
 
-  return { team, memberData, version, sprites };
+  return { team, members, version, sprites };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -191,14 +192,127 @@ function PencilIcon({ className }: { className?: string }) {
   );
 }
 
+const MAX_RETRIES = 3;
+const STAGGER_MS = 300;
+const RETRY_DELAY_MS = 5000;
+
+function useMemberData(members: TeamMember[]) {
+  const [loadedData, setLoadedData] = useState<Map<number, MemberWithMatches>>(new Map());
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
+
+  // Track what we've started loading to avoid double-fetches
+  const startedRef = useRef(new Set<number>());
+  const retriesRef = useRef(new Map<number, number>());
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchMember = useCallback((member: TeamMember, signal: AbortSignal, retryCount = 0) => {
+    setRetryingIds((prev) => {
+      if (retryCount > 0) {
+        const next = new Set(prev);
+        next.add(member.id);
+        return next;
+      }
+      return prev;
+    });
+
+    fetch(`/api/member-history/${member.id}`, { signal })
+      .then((res) => res.json() as Promise<MemberWithMatches>)
+      .then((data) => {
+        setLoadedData((prev) => new Map(prev).set(member.id, data));
+        setRetryingIds((prev) => {
+          if (!prev.has(member.id)) return prev;
+          const next = new Set(prev);
+          next.delete(member.id);
+          return next;
+        });
+
+        // Auto-retry if error with no matches
+        if (data.error && data.matches.length === 0 && retryCount < MAX_RETRIES) {
+          retriesRef.current.set(member.id, retryCount + 1);
+          setRetryingIds((prev) => {
+            const next = new Set(prev);
+            next.add(member.id);
+            return next;
+          });
+          setTimeout(() => {
+            if (!signal.aborted) {
+              fetchMember(member, signal, retryCount + 1);
+            }
+          }, RETRY_DELAY_MS);
+        }
+      })
+      .catch(() => {
+        // Aborted or network error — ignore
+      });
+  }, []);
+
+  // Kick off staggered fetches when members change
+  const memberIdsKey = members.map((m) => m.id).join(",");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Clean up state for removed members
+    const currentIds = new Set(members.map((m) => m.id));
+    for (const id of startedRef.current) {
+      if (!currentIds.has(id)) startedRef.current.delete(id);
+    }
+    setLoadedData((prev) => {
+      let needsClean = false;
+      for (const id of prev.keys()) {
+        if (!currentIds.has(id)) { needsClean = true; break; }
+      }
+      if (!needsClean) return prev;
+      const next = new Map<number, MemberWithMatches>();
+      for (const [id, data] of prev) {
+        if (currentIds.has(id)) next.set(id, data);
+      }
+      return next;
+    });
+
+    // Fetch members we haven't started yet
+    const toFetch = members.filter((m) => !startedRef.current.has(m.id));
+    toFetch.forEach((member, i) => {
+      startedRef.current.add(member.id);
+      retriesRef.current.set(member.id, 0);
+      setTimeout(() => {
+        if (!controller.signal.aborted) {
+          fetchMember(member, controller.signal);
+        }
+      }, i * STAGGER_MS);
+    });
+
+    return () => {
+      controller.abort();
+      // Don't clear startedRef — keep track of what we've already loaded
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberIdsKey]);
+
+  const manualRetry = useCallback((memberId: number) => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member || !abortRef.current) return;
+    retriesRef.current.set(memberId, 0);
+    fetchMember(member, abortRef.current.signal, 0);
+  }, [members, fetchMember]);
+
+  // Has a member exhausted retries? (error + not retrying + retries >= MAX)
+  const isMaxedOut = useCallback((memberId: number) => {
+    return (retriesRef.current.get(memberId) ?? 0) >= MAX_RETRIES;
+  }, []);
+
+  return { loadedData, retryingIds, manualRetry, isMaxedOut };
+}
+
 export default function TeamDetail({ loaderData }: Route.ComponentProps) {
-  const { team, memberData, version, sprites } = loaderData;
+  const { team, members, version, sprites } = loaderData;
   const actionData = useActionData<typeof action>();
   const [isEditing, setIsEditing] = useState(false);
   const emojiFormRef = useRef<HTMLFormElement>(null);
   const lastMemberRef = useRef<HTMLDivElement>(null);
   const [searchKey, setSearchKey] = useState(0);
-  const prevMemberCount = useRef(memberData.length);
+  const prevMemberCount = useRef(members.length);
   const [layout, setLayout] = useState<"list" | "grid" | "recent">(() => {
     if (typeof window === "undefined") return "list";
     return (localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent") || "list";
@@ -209,17 +323,20 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
     localStorage.setItem("rift-legends-layout", mode);
   }
 
+  // --- Lazy member data loading ---
+  const { loadedData, retryingIds, manualRetry, isMaxedOut } = useMemberData(members);
+
   // --- Member ordering (cached in localStorage) ---
   const orderKey = `rift-legends-order:${team.slug}`;
 
   function getSortedMembers() {
-    if (typeof window === "undefined") return memberData;
+    if (typeof window === "undefined") return members;
     try {
       const stored = localStorage.getItem(orderKey);
-      if (!stored) return memberData;
+      if (!stored) return members;
       const order: number[] = JSON.parse(stored);
-      const byId = new Map(memberData.map((d) => [d.member.id, d]));
-      const sorted: typeof memberData = [];
+      const byId = new Map(members.map((m) => [m.id, m]));
+      const sorted: TeamMember[] = [];
       for (const id of order) {
         const m = byId.get(id);
         if (m) {
@@ -231,20 +348,20 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
       for (const m of byId.values()) sorted.push(m);
       return sorted;
     } catch {
-      return memberData;
+      return members;
     }
   }
 
   const [orderedMembers, setOrderedMembers] = useState(getSortedMembers);
 
-  // Re-sort when memberData changes (add/remove)
+  // Re-sort when members change (add/remove)
   useEffect(() => {
     setOrderedMembers(getSortedMembers());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberData]);
+  }, [members]);
 
-  function saveOrder(members: typeof memberData) {
-    const ids = members.map((d) => d.member.id);
+  function saveOrder(newOrder: TeamMember[]) {
+    const ids = newOrder.map((m) => m.id);
     localStorage.setItem(orderKey, JSON.stringify(ids));
   }
 
@@ -285,17 +402,21 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
     setDragOverIdx(null);
   }, []);
 
-  // --- Recent games: merge all members' matches, sorted by time ---
+  // --- Recent games: merge all loaded members' matches, sorted by time ---
+  const RECENT_PAGE_SIZE = 10;
+  const [visibleRecentCount, setVisibleRecentCount] = useState(RECENT_PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
   const recentGames = useMemo(() => {
     const all: { match: ProcessedMatch; member: TeamMember }[] = [];
-    for (const data of memberData) {
+    for (const [, data] of loadedData) {
       for (const match of data.matches) {
         all.push({ match, member: data.member });
       }
     }
     all.sort((a, b) => b.match.gameCreation - a.match.gameCreation);
     return all;
-  }, [memberData]);
+  }, [loadedData]);
 
   const groupedRecentGames = useMemo(() => {
     const groups: { matchId: string; entries: typeof recentGames }[] = [];
@@ -314,16 +435,45 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
     return groups;
   }, [recentGames]);
 
+  const visibleRecentGames = useMemo(
+    () => groupedRecentGames.slice(0, visibleRecentCount),
+    [groupedRecentGames, visibleRecentCount],
+  );
+  const hasMoreRecent = visibleRecentCount < groupedRecentGames.length;
+
+  // Reset visible count when new data arrives
+  useEffect(() => {
+    setVisibleRecentCount(RECENT_PAGE_SIZE);
+  }, [loadedData]);
+
+  // IntersectionObserver to load more recent games on scroll
+  useEffect(() => {
+    if (layout !== "recent" || !hasMoreRecent) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleRecentCount((prev) => prev + RECENT_PAGE_SIZE);
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [layout, hasMoreRecent]);
+
   // On successful add: clear search and scroll to new member
   useEffect(() => {
-    if (memberData.length > prevMemberCount.current) {
+    if (members.length > prevMemberCount.current) {
       setSearchKey((k) => k + 1);
       requestAnimationFrame(() => {
         lastMemberRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     }
-    prevMemberCount.current = memberData.length;
-  }, [memberData.length]);
+    prevMemberCount.current = members.length;
+  }, [members.length]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -353,8 +503,8 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
               {team.name}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {memberData.length}{" "}
-              {memberData.length === 1 ? "member" : "members"}
+              {members.length}{" "}
+              {members.length === 1 ? "member" : "members"}
             </p>
           </div>
         </div>
@@ -463,14 +613,23 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
         </div>
       ) : layout === "recent" ? (
         <div className="space-y-3">
-          {recentGames.length === 0 ? (
+          {loadedData.size === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-12">
+              <svg className="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Loading matches...</span>
+            </div>
+          ) : recentGames.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-900">
               <p className="text-gray-500 dark:text-gray-400">
                 No recent matches found
               </p>
             </div>
           ) : (
-            groupedRecentGames.map((group) =>
+            <>
+            {visibleRecentGames.map((group) =>
               group.entries.length > 1 ? (
                 <div
                   key={group.matchId}
@@ -557,55 +716,87 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                   <MatchCard match={group.entries[0].match} version={version} sprites={sprites} />
                 </div>
               ),
-            )
+            )}
+            {hasMoreRecent && (
+              <div ref={sentinelRef} className="flex justify-center py-4">
+                <span className="text-xs text-gray-400 dark:text-gray-500">Loading more...</span>
+              </div>
+            )}
+            </>
           )}
         </div>
       ) : layout === "list" ? (
         <div className="space-y-6">
-          {orderedMembers.map((data, i) => (
-            <div
-              key={data.member.id}
-              ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
-              draggable={isEditing}
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={() => handleDrop(i)}
-              onDragEnd={handleDragEnd}
-              className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
-                dragOverIdx === i ? "border-t-2 border-indigo-500" : ""
-              } transition-[border]`}
-            >
-              <MemberSection
-                data={data}
-                version={version}
-                sprites={sprites}
-                isEditing={isEditing}
-              />
-            </div>
-          ))}
+          {orderedMembers.map((member, i) => {
+            const data = loadedData.get(member.id);
+            return (
+              <div
+                key={member.id}
+                ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
+                draggable={isEditing}
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={handleDragEnd}
+                className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
+                  dragOverIdx === i ? "border-t-2 border-indigo-500" : ""
+                } transition-[border]`}
+              >
+                {data ? (
+                  <MemberSection
+                    data={data}
+                    version={version}
+                    sprites={sprites}
+                    isEditing={isEditing}
+                    retrying={retryingIds.has(member.id)}
+                    onRetry={isMaxedOut(member.id) ? () => manualRetry(member.id) : undefined}
+                  />
+                ) : (
+                  <MemberSectionSkeleton
+                    member={member}
+                    version={version}
+                    isEditing={isEditing}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {orderedMembers.map((data, i) => (
-            <div
-              key={data.member.id}
-              ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
-              draggable={isEditing}
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={() => handleDrop(i)}
-              onDragEnd={handleDragEnd}
-              className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
-                dragOverIdx === i ? "ring-2 ring-indigo-500 rounded-lg" : ""
-              } transition-shadow`}
-            >
-              <MemberCard
-                data={data}
-                version={version}
-                isEditing={isEditing}
-              />
-            </div>
-          ))}
+          {orderedMembers.map((member, i) => {
+            const data = loadedData.get(member.id);
+            return (
+              <div
+                key={member.id}
+                ref={i === orderedMembers.length - 1 ? lastMemberRef : undefined}
+                draggable={isEditing}
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={handleDragEnd}
+                className={`${isEditing ? "cursor-grab active:cursor-grabbing" : ""} ${
+                  dragOverIdx === i ? "ring-2 ring-indigo-500 rounded-lg" : ""
+                } transition-shadow`}
+              >
+                {data ? (
+                  <MemberCard
+                    data={data}
+                    version={version}
+                    isEditing={isEditing}
+                    retrying={retryingIds.has(member.id)}
+                    onRetry={isMaxedOut(member.id) ? () => manualRetry(member.id) : undefined}
+                  />
+                ) : (
+                  <MemberCardSkeleton
+                    member={member}
+                    version={version}
+                    isEditing={isEditing}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </main>

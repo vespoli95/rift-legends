@@ -1,9 +1,8 @@
 import { Form, Link } from "react-router";
-import type { MemberWithMatches, RankedInfo } from "~/lib/types";
+import type { MemberWithMatches, RankedInfo, TeamMember } from "~/lib/types";
 import { profileIconUrl } from "~/lib/ddragon";
 import type { SpriteData } from "~/lib/ddragon";
 import { MatchCard } from "./match-card";
-import { ErrorPanel } from "./error-panel";
 
 const DEFAULT_VISIBLE = 3;
 
@@ -51,16 +50,89 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
+function Spinner({ className }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
+function MemberHeader({
+  member,
+  version,
+  ranked,
+  isEditing,
+}: {
+  member: TeamMember;
+  version: string;
+  ranked?: RankedInfo | null;
+  isEditing?: boolean;
+}) {
+  const playerUrl = `/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`;
+
+  return (
+    <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+      <Link
+        to={playerUrl}
+        className="flex cursor-pointer items-center gap-3 hover:opacity-80"
+      >
+        {member.profile_icon_id != null ? (
+          <img
+            src={profileIconUrl(version, member.profile_icon_id)}
+            alt=""
+            className="h-8 w-8 rounded-full"
+          />
+        ) : (
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-sm text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+            ?
+          </span>
+        )}
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-gray-900 dark:text-white">
+              {member.game_name}
+              <span className="text-gray-400">#{member.tag_line}</span>
+            </h3>
+            {ranked && <RankBadge ranked={ranked} />}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {ranked ? `${ranked.wins}W ${ranked.losses}L` : "View all games"}
+          </p>
+        </div>
+      </Link>
+      {isEditing && (
+        <Form method="post">
+          <input type="hidden" name="intent" value="remove-member" />
+          <input type="hidden" name="memberId" value={member.id} />
+          <button
+            type="submit"
+            className="cursor-pointer rounded-lg bg-red-100 p-2.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
+            title="Remove from team"
+          >
+            <TrashIcon className="h-5 w-5" />
+          </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
 export function MemberSection({
   data,
   version,
   sprites,
   isEditing = false,
+  retrying = false,
+  onRetry,
 }: {
   data: MemberWithMatches;
   version: string;
   sprites: SpriteData;
   isEditing?: boolean;
+  retrying?: boolean;
+  onRetry?: () => void;
 }) {
   const { member, matches, ranked, error } = data;
 
@@ -70,54 +142,35 @@ export function MemberSection({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      {/* Member Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-        <Link
-          to={playerUrl}
-          className="flex cursor-pointer items-center gap-3 hover:opacity-80"
-        >
-          {member.profile_icon_id != null ? (
-            <img
-              src={profileIconUrl(version, member.profile_icon_id)}
-              alt=""
-              className="h-8 w-8 rounded-full"
-            />
-          ) : (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-sm text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-              ?
-            </span>
-          )}
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-gray-900 dark:text-white">
-                {member.game_name}
-                <span className="text-gray-400">#{member.tag_line}</span>
-              </h3>
-              {ranked && <RankBadge ranked={ranked} />}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {ranked ? `${ranked.wins}W ${ranked.losses}L` : "View all games"}
-            </p>
-          </div>
-        </Link>
-        {isEditing && (
-          <Form method="post">
-            <input type="hidden" name="intent" value="remove-member" />
-            <input type="hidden" name="memberId" value={member.id} />
-            <button
-              type="submit"
-              className="cursor-pointer rounded-lg bg-red-100 p-2.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
-              title="Remove from team"
-            >
-              <TrashIcon className="h-5 w-5" />
-            </button>
-          </Form>
-        )}
-      </div>
+      <MemberHeader member={member} version={version} ranked={ranked} isEditing={isEditing} />
 
       {/* Content */}
       <div className="space-y-1.5 p-3">
-        {error && <ErrorPanel message={error} />}
+        {error && matches.length === 0 && (
+          <div className="flex items-center justify-center gap-2 py-4">
+            {retrying ? (
+              <>
+                <Spinner className="h-4 w-4 text-gray-400" />
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Loading failed — retrying...
+                </span>
+              </>
+            ) : onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="cursor-pointer text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+              >
+                Failed to load — tap to retry
+              </button>
+            ) : (
+              <span className="text-sm text-red-600 dark:text-red-400">{error}</span>
+            )}
+          </div>
+        )}
+        {error && matches.length > 0 && (
+          <p className="text-center text-xs text-amber-600 dark:text-amber-400">{error}</p>
+        )}
         {matches.length === 0 && !error && (
           <p className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
             No recent matches found
@@ -139,16 +192,49 @@ export function MemberSection({
   );
 }
 
+export function MemberSectionSkeleton({
+  member,
+  version,
+  isEditing = false,
+}: {
+  member: TeamMember;
+  version: string;
+  isEditing?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <MemberHeader member={member} version={version} isEditing={isEditing} />
+      <div className="space-y-1.5 p-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" style={{ height: 72 }}>
+            <div className="flex h-full items-center gap-3 px-3">
+              <div className="h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-700" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
+                <div className="h-2.5 w-16 rounded bg-gray-200 dark:bg-gray-700" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MemberCard({
   data,
   version,
   isEditing = false,
+  retrying = false,
+  onRetry,
 }: {
   data: MemberWithMatches;
   version: string;
   isEditing?: boolean;
+  retrying?: boolean;
+  onRetry?: () => void;
 }) {
-  const { member, matches, ranked } = data;
+  const { member, matches, ranked, error } = data;
   const playerUrl = `/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`;
 
   const wins = matches.filter((m) => m.win).length;
@@ -197,6 +283,74 @@ export function MemberCard({
           </p>
         )}
       </Link>
+      {error && matches.length === 0 && (
+        <div className="mt-2 flex items-center justify-center gap-1.5">
+          {retrying ? (
+            <>
+              <Spinner className="h-3.5 w-3.5 text-gray-400" />
+              <span className="text-xs text-gray-500 dark:text-gray-400">Retrying...</span>
+            </>
+          ) : onRetry ? (
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); onRetry(); }}
+              className="cursor-pointer text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+            >
+              Tap to retry
+            </button>
+          ) : (
+            <span className="text-xs text-red-600 dark:text-red-400">{error}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MemberCardSkeleton({
+  member,
+  version,
+  isEditing = false,
+}: {
+  member: TeamMember;
+  version: string;
+  isEditing?: boolean;
+}) {
+  return (
+    <div className="relative rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      {isEditing && (
+        <Form method="post" className="absolute right-2 top-2">
+          <input type="hidden" name="intent" value="remove-member" />
+          <input type="hidden" name="memberId" value={member.id} />
+          <button
+            type="submit"
+            className="cursor-pointer rounded bg-red-100 p-1.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
+            title="Remove from team"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </Form>
+      )}
+      <div className="flex flex-col items-center gap-2">
+        {member.profile_icon_id != null ? (
+          <img
+            src={profileIconUrl(version, member.profile_icon_id)}
+            alt=""
+            className="h-14 w-14 rounded-full"
+          />
+        ) : (
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-200 text-lg text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+            ?
+          </span>
+        )}
+        <div className="text-center">
+          <h3 className="font-semibold text-gray-900 dark:text-white">
+            {member.game_name}
+          </h3>
+          <p className="text-xs text-gray-400 dark:text-gray-500">#{member.tag_line}</p>
+        </div>
+        <Spinner className="h-4 w-4 text-gray-400" />
+      </div>
     </div>
   );
 }

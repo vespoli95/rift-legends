@@ -6,7 +6,7 @@ import {
   QUEUE_TYPE_MAP,
 } from "~/lib/ddragon";
 import type { SpriteData } from "~/lib/ddragon";
-import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor } from "~/lib/utils";
+import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor, ordinalSuffix } from "~/lib/utils";
 
 const POSITION_ICON: Record<string, string> = {
   TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
@@ -101,9 +101,17 @@ export function MatchCard({
         <p className={`text-sm font-bold ${scoreColor}`}>
           {score.toFixed(1)}
         </p>
-        {match.isMvp ? (
+        {match.gameRank === 1 ? (
           <span className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white">
             MVP
+          </span>
+        ) : match.gameRank <= 3 ? (
+          <span className="rounded bg-indigo-500 px-1 py-0.5 text-[10px] font-bold text-white">
+            {ordinalSuffix(match.gameRank)}
+          </span>
+        ) : match.gameRank <= 5 ? (
+          <span className="rounded bg-gray-400 px-1 py-0.5 text-[10px] font-bold text-white dark:bg-gray-600">
+            {ordinalSuffix(match.gameRank)}
           </span>
         ) : (
           <p className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">RS</p>

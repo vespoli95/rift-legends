@@ -135,6 +135,13 @@ export function riftScoreColor(score: number): string {
   return "text-gray-500 dark:text-gray-400";
 }
 
+export function ordinalSuffix(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
+}
+
 export function parseRiotId(input: string): { gameName: string; tagLine: string } | null {
   const trimmed = input.trim();
   const hashIndex = trimmed.lastIndexOf("#");

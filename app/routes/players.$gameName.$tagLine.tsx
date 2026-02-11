@@ -181,9 +181,26 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   try {
     const matchIds = await getMatchIdsForPuuid(puuid, MATCHES_PER_PAGE, start);
 
-    const matches = (
-      await Promise.all(matchIds.map((id) => getProcessedMatch(id, puuid)))
-    ).filter((m): m is ProcessedMatch => m !== null);
+    let failedCount = 0;
+    const results = await Promise.all(
+      matchIds.map(async (id) => {
+        try {
+          return await getProcessedMatch(id, puuid);
+        } catch {
+          failedCount++;
+          return null;
+        }
+      })
+    );
+
+    const matches = results.filter((m): m is ProcessedMatch => m !== null);
+
+    let warning: string | undefined;
+    if (failedCount > 0 && matches.length > 0) {
+      warning = `Loaded ${matches.length} of ${matchIds.length} matches (${failedCount} failed due to rate limiting)`;
+    } else if (failedCount > 0 && matches.length === 0) {
+      warning = "All matches failed to load — try again shortly";
+    }
 
     return {
       version,
@@ -196,6 +213,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       matches,
       start,
       hasMore: matchIds.length === MATCHES_PER_PAGE,
+      warning,
     };
   } catch {
     return {
@@ -226,6 +244,7 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
     start,
     hasMore,
     error,
+    warning,
   } = loaderData;
 
   const [matches, setMatches] = useState<ProcessedMatch[]>(initialMatches);
@@ -325,6 +344,13 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
       {error && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">
           {error}
+        </div>
+      )}
+
+      {/* Partial load warning */}
+      {warning && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400">
+          {warning}
         </div>
       )}
 
