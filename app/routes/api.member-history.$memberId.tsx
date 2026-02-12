@@ -3,6 +3,7 @@ import { getMemberMatchHistory } from "~/lib/riot-api.server";
 import type { Route } from "./+types/api.member-history.$memberId";
 
 export async function loader({ params }: Route.LoaderArgs) {
+  console.log(`[member-history] hit for memberId=${params.memberId}`);
   const memberId = parseInt(params.memberId, 10);
   if (isNaN(memberId)) {
     throw new Response("Invalid member ID", { status: 400 });

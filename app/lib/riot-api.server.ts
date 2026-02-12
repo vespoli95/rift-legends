@@ -240,7 +240,10 @@ export async function getAccountByRiotId(
 ): Promise<RiotAccount> {
   const cacheKey = `account:${gameName.toLowerCase()}:${tagLine.toLowerCase()}`;
   const cached = cacheGet<RiotAccount>(cacheKey, ACCOUNT_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+    return cached;
+  }
 
   const url = `${AMERICAS_BASE}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
   const res = await riotFetch(url);
@@ -260,7 +263,10 @@ interface SummonerData {
 export async function getSummonerByPuuid(puuid: string): Promise<SummonerData> {
   const cacheKey = `summoner:${puuid}`;
   const cached = cacheGet<SummonerData>(cacheKey, SUMMONER_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+    return cached;
+  }
 
   const url = `${NA1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`;
   const res = await riotFetch(url);
@@ -294,6 +300,7 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
   const cacheKey = `ranked:${puuid}`;
   const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
   if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
     return cached.data;
   }
 
@@ -332,7 +339,10 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
 async function getMatchIds(puuid: string, count = 3, start = 0): Promise<string[]> {
   const cacheKey = `matches:${puuid}:${start}:${count}`;
   const cached = cacheGet<string[]>(cacheKey, MATCH_LIST_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+    return cached;
+  }
 
   const url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=${start}&count=${count}`;
   const res = await riotFetch(url);
@@ -376,7 +386,10 @@ const inflightMatches = new Map<string, Promise<MatchDetail>>();
 export function getMatchDetail(matchId: string): Promise<MatchDetail> {
   const cacheKey = `match:${matchId}`;
   const cached = cacheGet<MatchDetail>(cacheKey, MATCH_DETAIL_TTL);
-  if (cached) return Promise.resolve(cached);
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+    return Promise.resolve(cached);
+  }
 
   // If a fetch for this match is already in progress, reuse it
   const inflight = inflightMatches.get(matchId);

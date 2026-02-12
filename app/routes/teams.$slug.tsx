@@ -313,10 +313,13 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   const lastMemberRef = useRef<HTMLDivElement>(null);
   const [searchKey, setSearchKey] = useState(0);
   const prevMemberCount = useRef(members.length);
-  const [layout, setLayout] = useState<"list" | "grid" | "recent">(() => {
-    if (typeof window === "undefined") return "list";
-    return (localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent") || "list";
-  });
+  const [layout, setLayout] = useState<"list" | "grid" | "recent">("list");
+
+  // Sync from localStorage after hydration
+  useEffect(() => {
+    const saved = localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent" | null;
+    if (saved && saved !== "list") setLayout(saved);
+  }, []);
 
   function switchLayout(mode: "list" | "grid" | "recent") {
     setLayout(mode);

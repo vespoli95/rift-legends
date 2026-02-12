@@ -17,6 +17,7 @@ export function loader() {
 
 export default function Home({ loaderData }: Route.ComponentProps) {
   const { teams } = loaderData;
+            console.log({TEST: "TEST"})  
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -46,9 +47,11 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {teams.map((team) => (
-            <TeamCard key={team.id} team={team} />
-          ))}
+          {teams.map((team) => {
+            console.log({TEST: "TEST"})  
+            
+            return <TeamCard key={team.id} team={team} />
+          })}
         </div>
       )}
     </main>

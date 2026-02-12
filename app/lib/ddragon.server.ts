@@ -42,27 +42,33 @@ export async function getSpriteData(version: string): Promise<SpriteData> {
   }
 
   const champions: Record<string, SpriteCoords> = {};
+  const championNames: Record<string, string> = {};
   for (const [key, val] of Object.entries(champJson.data)) {
-    const img = (val as { image: { sprite: string; x: number; y: number; w: number; h: number } }).image;
-    champions[key] = { sprite: img.sprite, x: img.x, y: img.y, w: img.w, h: img.h };
-    trackSheet(img.sprite, img.x, img.y, img.w, img.h);
+    const entry = val as { name: string; image: { sprite: string; x: number; y: number; w: number; h: number } };
+    champions[key] = { sprite: entry.image.sprite, x: entry.image.x, y: entry.image.y, w: entry.image.w, h: entry.image.h };
+    championNames[key] = entry.name;
+    trackSheet(entry.image.sprite, entry.image.x, entry.image.y, entry.image.w, entry.image.h);
   }
 
   const items: Record<string, SpriteCoords> = {};
+  const itemNames: Record<string, string> = {};
   for (const [key, val] of Object.entries(itemJson.data)) {
-    const img = (val as { image: { sprite: string; x: number; y: number; w: number; h: number } }).image;
-    items[key] = { sprite: img.sprite, x: img.x, y: img.y, w: img.w, h: img.h };
-    trackSheet(img.sprite, img.x, img.y, img.w, img.h);
+    const entry = val as { name: string; image: { sprite: string; x: number; y: number; w: number; h: number } };
+    items[key] = { sprite: entry.image.sprite, x: entry.image.x, y: entry.image.y, w: entry.image.w, h: entry.image.h };
+    itemNames[key] = entry.name;
+    trackSheet(entry.image.sprite, entry.image.x, entry.image.y, entry.image.w, entry.image.h);
   }
 
   const spells: Record<string, SpriteCoords> = {};
+  const spellNames: Record<string, string> = {};
   for (const [key, val] of Object.entries(spellJson.data)) {
-    const img = (val as { image: { sprite: string; x: number; y: number; w: number; h: number } }).image;
-    spells[key] = { sprite: img.sprite, x: img.x, y: img.y, w: img.w, h: img.h };
-    trackSheet(img.sprite, img.x, img.y, img.w, img.h);
+    const entry = val as { name: string; image: { sprite: string; x: number; y: number; w: number; h: number } };
+    spells[key] = { sprite: entry.image.sprite, x: entry.image.x, y: entry.image.y, w: entry.image.w, h: entry.image.h };
+    spellNames[key] = entry.name;
+    trackSheet(entry.image.sprite, entry.image.x, entry.image.y, entry.image.w, entry.image.h);
   }
 
-  const data: SpriteData = { champions, items, spells, sheetSizes };
+  const data: SpriteData = { champions, items, spells, sheetSizes, championNames, itemNames, spellNames };
   cacheSet(cacheKey, data);
   return data;
 }

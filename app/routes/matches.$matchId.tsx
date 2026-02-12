@@ -46,10 +46,17 @@ export async function loader({ params }: Route.LoaderArgs) {
     scoreMap[s.puuid] = s.score;
   }
 
-  // Compute rank for each participant (ties get same rank)
+  // Compute rank for each participant (ties broken by KDA ratio)
+  const kdaMap: Record<string, number> = {};
+  for (const p of match.info.participants) {
+    kdaMap[p.puuid] = p.deaths === 0 ? p.kills + p.assists + 1000 : (p.kills + p.assists) / p.deaths;
+  }
+
   const rankMap: Record<string, number> = {};
   for (const s of scores) {
-    const higherCount = scores.filter((o) => o.score > s.score).length;
+    const higherCount = scores.filter(
+      (o) => o.score > s.score || (o.score === s.score && (kdaMap[o.puuid] ?? 0) > (kdaMap[s.puuid] ?? 0)),
+    ).length;
     rankMap[s.puuid] = higherCount + 1;
   }
 
@@ -74,6 +81,18 @@ export async function loader({ params }: Route.LoaderArgs) {
 
   return { match, version, scoreMap, rankMap, rankedMap, sprites };
 }
+
+const POSITION_ICON: Record<string, string> = {
+  TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
+  JUNGLE: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
+  MIDDLE: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-middle.svg",
+  BOTTOM: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-bottom.svg",
+  UTILITY: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-utility.svg",
+};
+
+const POSITION_LABEL: Record<string, string> = {
+  TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support",
+};
 
 const TIER_COLORS: Record<string, string> = {
   IRON: "text-gray-500",
@@ -135,10 +154,10 @@ function ParticipantRow({
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
-      {/* Champion + Spells */}
+      {/* Champion + Spells + Role */}
       <td className="py-2 pl-3 pr-2">
         <div className="flex items-center gap-1.5">
-          <div className="relative flex-shrink-0">
+          <div className="relative flex-shrink-0" title={sprites.championNames[participant.championName] || participant.championName}>
             {champCoords ? (
               <div
                 className="rounded-full"
@@ -153,16 +172,24 @@ function ParticipantRow({
           </div>
           <div className="flex flex-col gap-0.5">
             {spell1Coords ? (
-              <div className="rounded" style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 16)} />
+              <div className="rounded" title={sprites.spellNames[spell1] || spell1} style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 16)} />
             ) : (
               <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
             )}
             {spell2Coords ? (
-              <div className="rounded" style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 16)} />
+              <div className="rounded" title={sprites.spellNames[spell2] || spell2} style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 16)} />
             ) : (
               <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
             )}
           </div>
+          {POSITION_ICON[participant.teamPosition] && (
+            <img
+              src={POSITION_ICON[participant.teamPosition]}
+              alt={POSITION_LABEL[participant.teamPosition] || participant.teamPosition}
+              title={POSITION_LABEL[participant.teamPosition] || participant.teamPosition}
+              className="h-5 w-5 opacity-70"
+            />
+          )}
         </div>
       </td>
 
@@ -209,11 +236,11 @@ function ParticipantRow({
             <span className="rounded bg-indigo-500 px-1 py-0.5 text-[10px] font-bold text-white">
               {ordinalSuffix(rank)}
             </span>
-          ) : rank <= 5 ? (
+          ) : (
             <span className="rounded bg-gray-400 px-1 py-0.5 text-[10px] font-bold text-white dark:bg-gray-600">
               {ordinalSuffix(rank)}
             </span>
-          ) : null}
+          )}
         </div>
         <p
           className="text-[10px] text-gray-400 dark:text-gray-500"
@@ -272,7 +299,7 @@ function ParticipantRow({
       <td className="hidden py-2 pl-2 pr-3 lg:table-cell">
         <div className="flex items-center gap-0.5">
           {items.map((itemId, i) => (
-            <div key={i} className="h-6 w-6">
+            <div key={i} className="h-6 w-6" title={itemId > 0 ? sprites.itemNames[String(itemId)] || "" : ""}>
               {itemId > 0 && sprites.items[String(itemId)] ? (
                 <div
                   className="rounded"
@@ -283,7 +310,7 @@ function ParticipantRow({
               )}
             </div>
           ))}
-          <div className="ml-0.5 h-6 w-6">
+          <div className="ml-0.5 h-6 w-6" title={participant.item6 > 0 ? sprites.itemNames[String(participant.item6)] || "" : ""}>
             {participant.item6 > 0 && sprites.items[String(participant.item6)] ? (
               <div
                 className="rounded-full"
@@ -341,13 +368,18 @@ function TeamTable({
       </div>
       <table className="w-full">
         <thead>
+          <tr className="text-[10px] text-gray-400 dark:text-gray-500">
+            <th colSpan={5} />
+            <th colSpan={2} className="hidden border-b border-gray-200 pb-0 pt-1 text-center font-medium md:table-cell dark:border-gray-700">Damage</th>
+            <th colSpan={3} />
+          </tr>
           <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
             <th className="py-1 pl-3 pr-2 text-left font-medium">Champ</th>
             <th className="px-2 py-1 text-left font-medium">Player</th>
             <th className="px-2 py-1 text-center font-medium">KDA</th>
             <th className="px-2 py-1 text-center font-medium">RS</th>
             <th className="hidden px-2 py-1 text-center font-medium sm:table-cell">CS</th>
-            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">DMG</th>
+            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Done</th>
             <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Taken</th>
             <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Gold</th>
             <th className="hidden px-2 py-1 text-center font-medium lg:table-cell">Vision</th>

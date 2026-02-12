@@ -15,6 +15,9 @@ export interface SpriteData {
   items: Record<string, SpriteCoords>;
   spells: Record<string, SpriteCoords>;
   sheetSizes: Record<string, { w: number; h: number }>;
+  championNames: Record<string, string>;  // key (e.g. "Aatrox") -> display name (e.g. "Aatrox")
+  itemNames: Record<string, string>;      // id (e.g. "3157") -> name (e.g. "Zhonya's Hourglass")
+  spellNames: Record<string, string>;     // key (e.g. "SummonerFlash") -> name (e.g. "Flash")
 }
 
 export function spriteStyle(
