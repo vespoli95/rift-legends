@@ -148,16 +148,16 @@ function ParticipantRow({
     participant.item4,
     participant.item5,
   ];
-  const champCoords = sprites.champions[participant.championName];
-  const spell1Coords = sprites.spells[spell1];
-  const spell2Coords = sprites.spells[spell2];
+  const champCoords = sprites.champions?.[participant.championName];
+  const spell1Coords = sprites.spells?.[spell1];
+  const spell2Coords = sprites.spells?.[spell2];
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
       {/* Champion + Spells + Role */}
       <td className="py-2 pl-3 pr-2">
         <div className="flex items-center gap-1.5">
-          <div className="relative flex-shrink-0" title={sprites.championNames[participant.championName] || participant.championName}>
+          <div className="relative flex-shrink-0" title={sprites.championNames?.[participant.championName] || participant.championName}>
             {champCoords ? (
               <div
                 className="rounded-full"
@@ -172,12 +172,12 @@ function ParticipantRow({
           </div>
           <div className="flex flex-col gap-0.5">
             {spell1Coords ? (
-              <div className="rounded" title={sprites.spellNames[spell1] || spell1} style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 16)} />
+              <div className="rounded" title={sprites.spellNames?.[spell1] || spell1} style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 16)} />
             ) : (
               <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
             )}
             {spell2Coords ? (
-              <div className="rounded" title={sprites.spellNames[spell2] || spell2} style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 16)} />
+              <div className="rounded" title={sprites.spellNames?.[spell2] || spell2} style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 16)} />
             ) : (
               <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-700" />
             )}
@@ -299,8 +299,8 @@ function ParticipantRow({
       <td className="hidden py-2 pl-2 pr-3 lg:table-cell">
         <div className="flex items-center gap-0.5">
           {items.map((itemId, i) => (
-            <div key={i} className="h-6 w-6" title={itemId > 0 ? sprites.itemNames[String(itemId)] || "" : ""}>
-              {itemId > 0 && sprites.items[String(itemId)] ? (
+            <div key={i} className="h-6 w-6" title={itemId > 0 ? sprites.itemNames?.[String(itemId)] || "" : ""}>
+              {itemId > 0 && sprites.items?.[String(itemId)] ? (
                 <div
                   className="rounded"
                   style={spriteStyle(version, sprites.items[String(itemId)], sprites.sheetSizes, 24)}
@@ -310,8 +310,8 @@ function ParticipantRow({
               )}
             </div>
           ))}
-          <div className="ml-0.5 h-6 w-6" title={participant.item6 > 0 ? sprites.itemNames[String(participant.item6)] || "" : ""}>
-            {participant.item6 > 0 && sprites.items[String(participant.item6)] ? (
+          <div className="ml-0.5 h-6 w-6" title={participant.item6 > 0 ? sprites.itemNames?.[String(participant.item6)] || "" : ""}>
+            {participant.item6 > 0 && sprites.items?.[String(participant.item6)] ? (
               <div
                 className="rounded-full"
                 style={spriteStyle(version, sprites.items[String(participant.item6)], sprites.sheetSizes, 24)}

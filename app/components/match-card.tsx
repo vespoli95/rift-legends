@@ -35,9 +35,9 @@ export function MatchCard({
   const score = riftScore(match);
   const scoreColor = riftScoreColor(score);
 
-  const champCoords = sprites.champions[match.championName];
-  const spell1Coords = sprites.spells[spell1];
-  const spell2Coords = sprites.spells[spell2];
+  const champCoords = sprites.champions?.[match.championName];
+  const spell1Coords = sprites.spells?.[spell1];
+  const spell2Coords = sprites.spells?.[spell2];
 
   return (
     <Link
@@ -45,7 +45,7 @@ export function MatchCard({
       className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
     >
       {/* Champion Icon + Level */}
-      <div className="relative flex-shrink-0" title={sprites.championNames[match.championName] || match.championName}>
+      <div className="relative flex-shrink-0" title={sprites.championNames?.[match.championName] || match.championName}>
         {champCoords ? (
           <div
             className="rounded-full"
@@ -64,7 +64,7 @@ export function MatchCard({
         {spell1Coords ? (
           <div
             className="rounded"
-            title={sprites.spellNames[spell1] || spell1}
+            title={sprites.spellNames?.[spell1] || spell1}
             style={spriteStyle(version, spell1Coords, sprites.sheetSizes, 20)}
           />
         ) : (
@@ -73,7 +73,7 @@ export function MatchCard({
         {spell2Coords ? (
           <div
             className="rounded"
-            title={sprites.spellNames[spell2] || spell2}
+            title={sprites.spellNames?.[spell2] || spell2}
             style={spriteStyle(version, spell2Coords, sprites.sheetSizes, 20)}
           />
         ) : (
@@ -139,8 +139,8 @@ export function MatchCard({
       {/* Items */}
       <div className="hidden flex-shrink-0 items-center gap-0.5 md:flex">
         {match.items.map((itemId, i) => (
-          <div key={i} className="h-6 w-6" title={itemId > 0 ? sprites.itemNames[String(itemId)] || "" : ""}>
-            {itemId > 0 && sprites.items[String(itemId)] ? (
+          <div key={i} className="h-6 w-6" title={itemId > 0 ? sprites.itemNames?.[String(itemId)] || "" : ""}>
+            {itemId > 0 && sprites.items?.[String(itemId)] ? (
               <div
                 className="rounded"
                 style={spriteStyle(version, sprites.items[String(itemId)], sprites.sheetSizes, 24)}
@@ -150,8 +150,8 @@ export function MatchCard({
             )}
           </div>
         ))}
-        <div className="ml-0.5 h-6 w-6" title={match.trinket > 0 ? sprites.itemNames[String(match.trinket)] || "" : ""}>
-          {match.trinket > 0 && sprites.items[String(match.trinket)] ? (
+        <div className="ml-0.5 h-6 w-6" title={match.trinket > 0 ? sprites.itemNames?.[String(match.trinket)] || "" : ""}>
+          {match.trinket > 0 && sprites.items?.[String(match.trinket)] ? (
             <div
               className="rounded-full"
               style={spriteStyle(version, sprites.items[String(match.trinket)], sprites.sheetSizes, 24)}
