@@ -209,7 +209,7 @@ function ParticipantRow({
             <span className="rounded bg-indigo-500 px-1 py-0.5 text-[10px] font-bold text-white">
               {ordinalSuffix(rank)}
             </span>
-          ) : rank <= 5 ? (
+          ) : rank <= 10 ? (
             <span className="rounded bg-gray-400 px-1 py-0.5 text-[10px] font-bold text-white dark:bg-gray-600">
               {ordinalSuffix(rank)}
             </span>
@@ -347,8 +347,8 @@ function TeamTable({
             <th className="px-2 py-1 text-center font-medium">KDA</th>
             <th className="px-2 py-1 text-center font-medium">RS</th>
             <th className="hidden px-2 py-1 text-center font-medium sm:table-cell">CS</th>
-            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">DMG</th>
-            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Taken</th>
+            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">DMG (done)</th>
+            <th className="hidden px-2 py-1 text-center font-medium md:table-cell">DMG (taken)</th>
             <th className="hidden px-2 py-1 text-center font-medium md:table-cell">Gold</th>
             <th className="hidden px-2 py-1 text-center font-medium lg:table-cell">Vision</th>
             <th className="hidden py-1 pl-2 pr-3 text-left font-medium lg:table-cell">Items</th>

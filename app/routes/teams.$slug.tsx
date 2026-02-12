@@ -179,6 +179,27 @@ function ClockIcon({ className }: { className?: string }) {
   );
 }
 
+function GrassIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <path d="M10 2a.75.75 0 01.75.75v6.5a.75.75 0 01-1.5 0v-6.5A.75.75 0 0110 2z" />
+      <path d="M5.404 4.343a.75.75 0 011.06 0L10 7.879l3.536-3.536a.75.75 0 111.06 1.06L10.53 9.47a.75.75 0 01-1.06 0L5.404 5.404a.75.75 0 010-1.06z" />
+      <path d="M2 15.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 15.5z" />
+      <path d="M6.5 10a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4A.75.75 0 016.5 10zM13.5 10a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4a.75.75 0 01.75-.75zM10 12a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 0110 12z" />
+    </svg>
+  );
+}
+
+function getGrassTier(avgPerDay: number): { label: string; color: string } {
+  if (avgPerDay >= 5) return { label: "WARNING: YOUR FAMILY IS GOING TO DISOWN YOU - LAY OFF THE RIFT", color: "text-red-500" };
+  if (avgPerDay >= 4) return { label: "Touch grass King", color: "text-orange-700" };
+  if (avgPerDay >= 3) return { label: "The grass is calling", color: "text-orange-300" };
+  if (avgPerDay >= 2) return { label: "Reliable Rift consumer", color: "text-yellow-500" };
+  if (avgPerDay >= 1) return { label: "Family man", color: "text-blue-500" };
+  if (avgPerDay >= 0) return { label: 'ABSOLUTE GIGACHAD "League is for virgins"', color: "text-green-500" };
+  return { label: "Touched grass successfully", color: "text-emerald-500" };
+}
+
 function PencilIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -313,12 +334,12 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   const lastMemberRef = useRef<HTMLDivElement>(null);
   const [searchKey, setSearchKey] = useState(0);
   const prevMemberCount = useRef(members.length);
-  const [layout, setLayout] = useState<"list" | "grid" | "recent">(() => {
+  const [layout, setLayout] = useState<"list" | "grid" | "recent" | "grass">(() => {
     if (typeof window === "undefined") return "list";
-    return (localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent") || "list";
+    return (localStorage.getItem("rift-legends-layout") as "list" | "grid" | "recent" | "grass") || "list";
   });
 
-  function switchLayout(mode: "list" | "grid" | "recent") {
+  function switchLayout(mode: "list" | "grid" | "recent" | "grass") {
     setLayout(mode);
     localStorage.setItem("rift-legends-layout", mode);
   }
@@ -405,7 +426,6 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   // --- Recent games: merge all loaded members' matches, sorted by time ---
   const RECENT_PAGE_SIZE = 10;
   const [visibleRecentCount, setVisibleRecentCount] = useState(RECENT_PAGE_SIZE);
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const recentGames = useMemo(() => {
     const all: { match: ProcessedMatch; member: TeamMember }[] = [];
@@ -441,28 +461,23 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   );
   const hasMoreRecent = visibleRecentCount < groupedRecentGames.length;
 
+  // --- Touch Grass leaderboard: games in last 7 days ---
+  const grassLeaderboard = useMemo(() => {
+    const entries = members.map((member) => {
+      const data = loadedData.get(member.id);
+      const total = data?.recentGameCount ?? 0;
+      const avgPerDay = total / 7;
+      const tier = getGrassTier(avgPerDay);
+      return { member, total, avgPerDay, tier };
+    });
+    entries.sort((a, b) => b.total - a.total);
+    return entries;
+  }, [members, loadedData]);
+
   // Reset visible count when new data arrives
   useEffect(() => {
     setVisibleRecentCount(RECENT_PAGE_SIZE);
   }, [loadedData]);
-
-  // IntersectionObserver to load more recent games on scroll
-  useEffect(() => {
-    if (layout !== "recent" || !hasMoreRecent) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisibleRecentCount((prev) => prev + RECENT_PAGE_SIZE);
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [layout, hasMoreRecent]);
 
   // On successful add: clear search and scroll to new member
   useEffect(() => {
@@ -540,13 +555,26 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
               <button
                 type="button"
                 onClick={() => switchLayout("recent")}
-                className={`cursor-pointer rounded-r-lg px-2.5 py-1.5 ${
+                className={`cursor-pointer border-r border-gray-300 px-2.5 py-1.5 dark:border-gray-600 ${
                   layout === "recent"
                     ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
                     : "text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
                 }`}
               >
                 <ClockIcon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Touch Grass">
+              <button
+                type="button"
+                onClick={() => switchLayout("grass")}
+                className={`cursor-pointer rounded-r-lg px-2.5 py-1.5 ${
+                  layout === "grass"
+                    ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
+                    : "text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
+                }`}
+              >
+                <GrassIcon className="h-4 w-4" />
               </button>
             </Tooltip>
           </div>
@@ -620,7 +648,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                Loading matches ({loadedData.size}/{members.length})...
+                Loading matches ({groupedRecentGames.length} loaded)...
               </span>
             </div>
           ) : recentGames.length === 0 ? (
@@ -719,11 +747,88 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                 </div>
               ),
             )}
-            {hasMoreRecent && (
-              <div ref={sentinelRef} className="flex justify-center py-4">
-                <span className="text-xs text-gray-400 dark:text-gray-500">Loading more...</span>
+            </>
+          )}
+          {hasMoreRecent && loadedData.size === members.length && (
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={() => setVisibleRecentCount((prev) => prev + RECENT_PAGE_SIZE)}
+                className="cursor-pointer rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Load More Games
+              </button>
+            </div>
+          )}
+        </div>
+      ) : layout === "grass" ? (
+        <div className="space-y-3">
+          {loadedData.size < members.length ? (
+            <div className="flex items-center justify-center gap-2 py-12">
+              <svg className="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Loading member data ({loadedData.size}/{members.length})...
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950/30">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Touch Grass Leaderboard</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Games played in the last 7 days</p>
               </div>
-            )}
+              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                      <th className="py-2 pl-4 pr-2 text-left font-medium">#</th>
+                      <th className="px-2 py-2 text-left font-medium">Player</th>
+                      <th className="px-2 py-2 text-center font-medium">Games</th>
+                      <th className="px-2 py-2 text-center font-medium">Avg/Day</th>
+                      <th className="px-2 py-2 pr-4 text-left font-medium">Verdict</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grassLeaderboard.map((entry, i) => (
+                      <tr key={entry.member.id} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
+                        <td className="py-3 pl-4 pr-2">
+                          <span className="text-lg font-bold text-gray-400 dark:text-gray-500">{i + 1}</span>
+                        </td>
+                        <td className="px-2 py-3">
+                          <div className="flex items-center gap-2.5">
+                            {entry.member.profile_icon_id != null ? (
+                              <img
+                                src={profileIconUrl(version, entry.member.profile_icon_id)}
+                                alt=""
+                                className="h-8 w-8 rounded-full"
+                              />
+                            ) : (
+                              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">?</span>
+                            )}
+                            <Link
+                              to={`/players/${encodeURIComponent(entry.member.game_name)}/${encodeURIComponent(entry.member.tag_line)}`}
+                              className="font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400"
+                            >
+                              {entry.member.game_name}
+                            </Link>
+                          </div>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{entry.total}</span>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span className="text-lg font-bold text-gray-900 dark:text-white">{entry.avgPerDay.toFixed(1)}</span>
+                        </td>
+                        <td className="px-2 py-3 pr-4">
+                          <span className={`text-xs font-medium ${entry.tier.color}`}>{entry.tier.label}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </div>

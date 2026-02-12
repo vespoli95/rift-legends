@@ -95,9 +95,14 @@ async function riotFetchInner(url: string, attempt = 1, rateLimitRetries = 0): P
 
   let res: Response;
   try {
+    const fetchStart = Date.now();
     res = await fetch(url, {
       headers: { "X-Riot-Token": RIOT_API_KEY },
     });
+    const fetchMs = Date.now() - fetchStart;
+    if (fetchMs > 2000) {
+      console.warn(`[riot-api] slow fetch: ${tag} took ${fetchMs}ms`);
+    }
   } catch (error) {
     // Network error - retry
     console.warn(`[riot-api] network error on ${tag} (attempt ${attempt}/${MAX_RETRIES})`);
@@ -211,17 +216,30 @@ function logRateLimitHeaders(res: Response, tag: string) {
   );
 }
 
+let lastRateLimits = { app: "", method: "" };
+
 async function riotFetch(url: string): Promise<Response> {
   const tag = urlTag(url);
   const { active, queued } = riotSemaphore.stats;
-  if (queued > 0) {
-    console.log(`[riot-api] waiting for semaphore slot: ${tag} (active: ${active}, queued: ${queued})`);
+  if (active >= riotSemaphore.stats.max) {
+    console.log(`[riot-api] semaphore wait: ${tag} (active: ${active}, queued: ${queued + 1})`);
   }
+  const waitStart = Date.now();
   await riotSemaphore.acquire();
+  const waited = Date.now() - waitStart;
+  if (waited > 100) {
+    console.log(`[riot-api] semaphore acquired after ${waited}ms: ${tag}`);
+  }
   const start = Date.now();
   try {
     const res = await riotFetchInner(url);
     console.log(`[riot-api] ${res.status} ${tag} (${Date.now() - start}ms)`);
+    const appCount = res.headers.get("X-App-Rate-Limit-Count");
+    const appLimit = res.headers.get("X-App-Rate-Limit");
+    const methodCount = res.headers.get("X-Method-Rate-Limit-Count");
+    const methodLimit = res.headers.get("X-Method-Rate-Limit");
+    if (appCount && appLimit) lastRateLimits.app = `${appCount} / ${appLimit}`;
+    if (methodCount && methodLimit) lastRateLimits.method = `${methodCount} / ${methodLimit}`;
     logRateLimitHeaders(res, tag);
     return res;
   } catch (err) {
@@ -232,6 +250,10 @@ async function riotFetch(url: string): Promise<Response> {
   }
 }
 
+export function getLastRateLimits() {
+  return lastRateLimits;
+}
+
 // --- Account Lookup ---
 
 export async function getAccountByRiotId(
@@ -240,7 +262,10 @@ export async function getAccountByRiotId(
 ): Promise<RiotAccount> {
   const cacheKey = `account:${gameName.toLowerCase()}:${tagLine.toLowerCase()}`;
   const cached = cacheGet<RiotAccount>(cacheKey, ACCOUNT_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] cache hit: account ${gameName}#${tagLine}`);
+    return cached;
+  }
 
   const url = `${AMERICAS_BASE}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
   const res = await riotFetch(url);
@@ -260,7 +285,10 @@ interface SummonerData {
 export async function getSummonerByPuuid(puuid: string): Promise<SummonerData> {
   const cacheKey = `summoner:${puuid}`;
   const cached = cacheGet<SummonerData>(cacheKey, SUMMONER_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] cache hit: summoner ${puuid.slice(0, 8)}...`);
+    return cached;
+  }
 
   const url = `${NA1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`;
   const res = await riotFetch(url);
@@ -294,6 +322,7 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
   const cacheKey = `ranked:${puuid}`;
   const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
   if (cached) {
+    console.log(`[riot-api] cache hit: ranked ${puuid.slice(0, 8)}...`);
     return cached.data;
   }
 
@@ -332,7 +361,10 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
 async function getMatchIds(puuid: string, count = 3, start = 0): Promise<string[]> {
   const cacheKey = `matches:${puuid}:${start}:${count}`;
   const cached = cacheGet<string[]>(cacheKey, MATCH_LIST_TTL);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[riot-api] cache hit: match ids ${puuid.slice(0, 8)}... (${cached.length} ids)`);
+    return cached;
+  }
 
   const url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=${start}&count=${count}`;
   const res = await riotFetch(url);
@@ -340,6 +372,25 @@ async function getMatchIds(puuid: string, count = 3, start = 0): Promise<string[
 
   cacheSet(cacheKey, data);
   return data;
+}
+
+async function getRecentGameCount(puuid: string, days: number): Promise<number> {
+  const startTime = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+  const cacheKey = `recent-count:${puuid}:${days}d`;
+  const cached = cacheGet<number>(cacheKey, MATCH_LIST_TTL);
+  if (cached !== null) {
+    console.log(`[riot-api] cache hit: recent game count ${puuid.slice(0, 8)}... (${cached} games/${days}d)`);
+    return cached;
+  }
+
+  const url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?startTime=${startTime}&count=100`;
+  const res = await riotFetch(url);
+  const ids: string[] = await res.json();
+  const count = ids.length;
+
+  cacheSet(cacheKey, count);
+  console.log(`[riot-api] recent game count ${puuid.slice(0, 8)}...: ${count} games in ${days}d`);
+  return count;
 }
 
 export async function getMatchIdsForMember(
@@ -376,7 +427,10 @@ const inflightMatches = new Map<string, Promise<MatchDetail>>();
 export function getMatchDetail(matchId: string): Promise<MatchDetail> {
   const cacheKey = `match:${matchId}`;
   const cached = cacheGet<MatchDetail>(cacheKey, MATCH_DETAIL_TTL);
-  if (cached) return Promise.resolve(cached);
+  if (cached) {
+    console.log(`[riot-api] cache hit: match ${matchId}`);
+    return Promise.resolve(cached);
+  }
 
   // If a fetch for this match is already in progress, reuse it
   const inflight = inflightMatches.get(matchId);
@@ -460,14 +514,17 @@ export async function getMemberMatchHistory(
     const puuid =
       member.puuid ||
       (await getAccountByRiotId(member.game_name, member.tag_line)).puuid;
+    console.log(`[riot-api] ${memberTag}: puuid resolved in ${Date.now() - t0}ms`);
 
-    // Fetch matches and ranked data in parallel
-    const [matchIds, ranked] = await Promise.all([
-      getMatchIds(puuid, 10),
-      getRankedByPuuid(puuid),
+    // Fetch matches, ranked data, and 7-day game count in parallel
+    const t1 = Date.now();
+    const [matchIds, ranked, recentGameCount] = await Promise.all([
+      getMatchIds(puuid, 10).then(r => { console.log(`[riot-api] ${memberTag}: matchIds done (+${Date.now() - t1}ms)`); return r; }),
+      getRankedByPuuid(puuid).then(r => { console.log(`[riot-api] ${memberTag}: ranked done (+${Date.now() - t1}ms)`); return r; }),
+      getRecentGameCount(puuid, 7).then(r => { console.log(`[riot-api] ${memberTag}: recentCount done (+${Date.now() - t1}ms) = ${r}`); return r; }),
     ]);
 
-    console.log(`[riot-api] ${memberTag}: fetching ${matchIds.length} match details`);
+    console.log(`[riot-api] ${memberTag}: parallel fetch done in ${Date.now() - t1}ms, fetching ${matchIds.length} match details`);
 
     let failedCount = 0;
     const matchDetails = await Promise.all(
@@ -494,11 +551,14 @@ export async function getMemberMatchHistory(
       error = "All matches failed to load — try again shortly";
     }
 
+    const rl = getLastRateLimits();
     console.log(
       `[riot-api] ${memberTag}: done in ${Date.now() - t0}ms — ` +
-      `${matches.length} matches loaded, ${failedCount} failed`
+      `${matches.length} matches loaded, ${failedCount} failed, ${recentGameCount} games/7d` +
+      (rl.app ? ` | rate limits — app: ${rl.app}` : "") +
+      (rl.method ? `, method: ${rl.method}` : "")
     );
-    return { member, matches, ranked, error };
+    return { member, matches, ranked, error, recentGameCount };
   } catch (error) {
     const message =
       error instanceof RiotApiError

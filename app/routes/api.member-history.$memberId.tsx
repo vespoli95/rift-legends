@@ -13,6 +13,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response("Member not found", { status: 404 });
   }
 
+  const t0 = Date.now();
+  console.log(`[api] member-history/${memberId} start (${member.game_name}#${member.tag_line})`);
   const result = await getMemberMatchHistory(member);
+  console.log(`[api] member-history/${memberId} done in ${Date.now() - t0}ms (${result.matches.length} matches, ${result.recentGameCount ?? "?"} recent)`);
   return Response.json(result);
 }

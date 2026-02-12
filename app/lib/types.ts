@@ -109,4 +109,5 @@ export interface MemberWithMatches {
   matches: ProcessedMatch[];
   ranked?: RankedInfo | null;
   error?: string;
+  recentGameCount?: number;
 }
