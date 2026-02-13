@@ -17,6 +17,7 @@ import {
   participantRiftScore,
   riftScoreColor,
   ordinalSuffix,
+  computeGameRanks,
 } from "~/lib/utils";
 import type { MatchParticipant } from "~/lib/types";
 
@@ -36,28 +37,16 @@ export async function loader({ params }: Route.LoaderArgs) {
     // Fall back to a reasonable default
   }
 
-  const scores = match.info.participants.map((p) => ({
-    puuid: p.puuid,
-    score: participantRiftScore(p, match.info.gameDuration),
-  }));
-
   const scoreMap: Record<string, number> = {};
-  for (const s of scores) {
-    scoreMap[s.puuid] = s.score;
-  }
-
-  // Compute rank for each participant (ties broken by KDA ratio)
-  const kdaMap: Record<string, number> = {};
   for (const p of match.info.participants) {
-    kdaMap[p.puuid] = p.deaths === 0 ? p.kills + p.assists + 1000 : (p.kills + p.assists) / p.deaths;
+    scoreMap[p.puuid] = participantRiftScore(p, match.info.gameDuration);
   }
 
+  // Compute ranks using shared logic (unrounded scores + tie-break)
+  const ranks = computeGameRanks(match.info.participants, match.info.gameDuration);
   const rankMap: Record<string, number> = {};
-  for (const s of scores) {
-    const higherCount = scores.filter(
-      (o) => o.score > s.score || (o.score === s.score && (kdaMap[o.puuid] ?? 0) > (kdaMap[s.puuid] ?? 0)),
-    ).length;
-    rankMap[s.puuid] = higherCount + 1;
+  for (const [puuid, rank] of ranks) {
+    rankMap[puuid] = rank;
   }
 
   // Fetch ranked data and sprite data in parallel

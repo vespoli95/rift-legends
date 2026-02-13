@@ -100,6 +100,36 @@ export function riftScore(match: {
   return Math.round(score * 10) / 10;
 }
 
+/** Unrounded rift score — used internally for ranking to avoid false ties from rounding. */
+function riftScoreRaw(match: Parameters<typeof riftScore>[0]): number {
+  const minutes = match.gameDuration / 60 || 1;
+  const isSupport = match.teamPosition === "UTILITY";
+
+  const kdaVal = match.deaths === 0
+    ? (match.kills + match.assists) * 1.5
+    : (match.kills + match.assists) / match.deaths;
+  const kdaScore = Math.min(10, Math.log(kdaVal + 1) * 3.5);
+  const csScore = Math.min(10, match.csPerMin * 1.1);
+  const visionPerMin = match.visionScore / minutes;
+  const visionScoreVal = Math.min(10, visionPerMin * 6);
+  const dpm = match.totalDamageDealtToChampions / minutes;
+  const dmgScore = Math.min(10, dpm / 60);
+  const gpm = match.goldEarned / minutes;
+  const goldScore = Math.min(10, gpm / 45);
+
+  const w = isSupport
+    ? { kda: 0.40, cs: 0.03, vision: 0.30, dmg: 0.15, gold: 0.12 }
+    : { kda: 0.35, cs: 0.15, vision: 0.10, dmg: 0.25, gold: 0.15 };
+
+  return (
+    kdaScore * w.kda +
+    csScore * w.cs +
+    visionScoreVal * w.vision +
+    dmgScore * w.dmg +
+    goldScore * w.gold
+  );
+}
+
 export function participantRiftScore(
   participant: {
     kills: number;
@@ -126,6 +156,54 @@ export function participantRiftScore(
     gameDuration,
     teamPosition: participant.teamPosition,
   });
+}
+
+type RankableParticipant = {
+  puuid: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  totalMinionsKilled: number;
+  neutralMinionsKilled: number;
+  visionScore: number;
+  totalDamageDealtToChampions: number;
+  goldEarned: number;
+  teamPosition?: string;
+};
+
+/**
+ * Compute game ranks (1–10) for all participants using unrounded rift scores.
+ * Tie-break: higher raw score wins; if still tied, higher (kills+assists) wins.
+ * Returns a Map of puuid -> rank.
+ */
+export function computeGameRanks(
+  participants: RankableParticipant[],
+  gameDuration: number,
+): Map<string, number> {
+  const entries = participants.map((p) => {
+    const totalCs = p.totalMinionsKilled + p.neutralMinionsKilled;
+    const raw = riftScoreRaw({
+      kills: p.kills,
+      deaths: p.deaths,
+      assists: p.assists,
+      csPerMin: csPerMin(totalCs, gameDuration),
+      visionScore: p.visionScore,
+      totalDamageDealtToChampions: p.totalDamageDealtToChampions,
+      goldEarned: p.goldEarned,
+      gameDuration,
+      teamPosition: p.teamPosition,
+    });
+    return { puuid: p.puuid, raw, ka: p.kills + p.assists };
+  });
+
+  const ranks = new Map<string, number>();
+  for (const entry of entries) {
+    const higherCount = entries.filter(
+      (o) => o.raw > entry.raw || (o.raw === entry.raw && o.ka > entry.ka),
+    ).length;
+    ranks.set(entry.puuid, higherCount + 1);
+  }
+  return ranks;
 }
 
 export function riftScoreColor(score: number): string {

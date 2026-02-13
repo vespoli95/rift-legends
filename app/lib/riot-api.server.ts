@@ -6,7 +6,7 @@ import type {
   TeamMember,
   MemberWithMatches,
 } from "./types";
-import { csPerMin, participantRiftScore } from "./utils";
+import { csPerMin, computeGameRanks } from "./utils";
 
 const RIOT_API_KEY = process.env.RIOT_API_KEY;
 console.log("RIOT_API_KEY loaded:", RIOT_API_KEY ? "Yes (length: " + RIOT_API_KEY.length + ")" : "No");
@@ -420,12 +420,9 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
 
   const totalCs = participant.totalMinionsKilled + participant.neutralMinionsKilled;
 
-  // Compute rank: count how many players scored strictly higher
-  const playerScore = participantRiftScore(participant, match.info.gameDuration);
-  const higherCount = match.info.participants.filter(
-    (p) => participantRiftScore(p, match.info.gameDuration) > playerScore,
-  ).length;
-  const gameRank = higherCount + 1;
+  // Compute rank using shared ranking logic (unrounded scores + tie-break)
+  const ranks = computeGameRanks(match.info.participants, match.info.gameDuration);
+  const gameRank = ranks.get(puuid) ?? 10;
 
   return {
     matchId: match.metadata.matchId,
