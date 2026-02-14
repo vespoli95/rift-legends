@@ -1,4 +1,5 @@
-import { cacheGet, cacheSet } from "./db.server";
+import { cacheGet, cacheSet, recordLpSnapshot, getLpSnapshots } from "./db.server";
+import type { LpSnapshot } from "./db.server";
 import type {
   RiotAccount,
   MatchDetail,
@@ -327,6 +328,10 @@ export async function getRankedByPuuid(puuid: string): Promise<RankedData | null
     };
 
     cacheSet(cacheKey, { hasRank: true, data: ranked });
+
+    // Record LP snapshot for LP gain/loss tracking
+    recordLpSnapshot(puuid, ranked.tier, ranked.rank, ranked.lp, ranked.wins, ranked.losses);
+
     return ranked;
   } catch (error) {
     console.error("Failed to fetch ranked data:", error);
@@ -457,6 +462,68 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
   };
 }
 
+// --- LP Change Calculation ---
+
+const TIER_ORDER = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
+const RANK_ORDER = ["IV", "III", "II", "I"];
+
+/** Convert tier/rank/lp to a flat LP number for easy delta calculation. */
+function flatLp(tier: string, rank: string, lp: number): number {
+  const tierIndex = TIER_ORDER.indexOf(tier);
+  if (tierIndex >= 0) {
+    const rankIndex = RANK_ORDER.indexOf(rank);
+    return tierIndex * 400 + (rankIndex >= 0 ? rankIndex : 0) * 100 + lp;
+  }
+  // Master, Grandmaster, Challenger share a flat LP ladder above Diamond
+  return 2800 + lp;
+}
+
+const RANKED_SOLO_QUEUE_ID = 420;
+
+/**
+ * Attach LP gain/loss to ranked matches by comparing LP snapshots.
+ * For each ranked match, find two consecutive LP snapshots that bracket the game.
+ * If exactly one game was played between those snapshots, compute the LP delta.
+ */
+export function attachLpChanges(
+  puuid: string,
+  matches: ProcessedMatch[],
+): void {
+  const snapshots = getLpSnapshots(puuid);
+  if (snapshots.length < 2) return;
+
+  for (const match of matches) {
+    // Only calculate LP change for ranked solo queue
+    if (match.queueId !== RANKED_SOLO_QUEUE_ID) continue;
+
+    const gameEndTime = Math.floor((match.gameCreation + match.gameDuration * 1000) / 1000);
+
+    // Find the snapshot pair that brackets this game
+    // "before" = latest snapshot recorded before the game ended
+    // "after" = earliest snapshot recorded after the game ended
+    let before: LpSnapshot | null = null;
+    let after: LpSnapshot | null = null;
+
+    for (const snap of snapshots) {
+      if (snap.recorded_at <= gameEndTime) {
+        before = snap;
+      } else if (!after && snap.recorded_at > gameEndTime) {
+        after = snap;
+        break;
+      }
+    }
+
+    if (!before || !after) continue;
+
+    // Only attribute LP change if exactly 1 game was played between snapshots
+    const totalGamesBefore = before.wins + before.losses;
+    const totalGamesAfter = after.wins + after.losses;
+    if (totalGamesAfter - totalGamesBefore !== 1) continue;
+
+    match.lpChange = flatLp(after.tier, after.rank, after.lp) - flatLp(before.tier, before.rank, before.lp);
+  }
+}
+
 // --- High-level: Get Member Match History ---
 
 export async function getMemberMatchHistory(
@@ -496,6 +563,9 @@ export async function getMemberMatchHistory(
       .filter((m): m is MatchDetail => m !== null)
       .map((m) => processMatch(m, puuid))
       .filter((m): m is ProcessedMatch => m !== null);
+
+    // Attach LP gain/loss data to ranked matches
+    attachLpChanges(puuid, matches);
 
     let error: string | undefined;
     if (failedCount > 0 && matches.length > 0) {

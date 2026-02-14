@@ -68,6 +68,26 @@ function initSchema() {
   if (!teamColNames.includes("emoji")) {
     d.exec("ALTER TABLE teams ADD COLUMN emoji TEXT");
   }
+
+  // LP history table for tracking LP gain/loss per game
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS lp_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      puuid TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      rank TEXT NOT NULL,
+      lp INTEGER NOT NULL,
+      wins INTEGER NOT NULL,
+      losses INTEGER NOT NULL,
+      recorded_at INTEGER NOT NULL
+    )
+  `);
+
+  // Index for efficient lookups by puuid and time
+  d.exec(`
+    CREATE INDEX IF NOT EXISTS idx_lp_history_puuid_time
+    ON lp_history (puuid, recorded_at)
+  `);
 }
 
 // --- Teams ---
@@ -277,4 +297,58 @@ export function cacheSet(key: string, data: unknown): void {
   d.prepare(
     "INSERT OR REPLACE INTO riot_cache (cache_key, data, cached_at) VALUES (?, ?, ?)"
   ).run(key, JSON.stringify(data), Math.floor(Date.now() / 1000));
+}
+
+// --- LP History ---
+
+export interface LpSnapshot {
+  tier: string;
+  rank: string;
+  lp: number;
+  wins: number;
+  losses: number;
+  recorded_at: number;
+}
+
+/**
+ * Record an LP snapshot, but only if the wins/losses changed since the last snapshot.
+ * This avoids storing duplicate entries when ranked data hasn't changed.
+ */
+export function recordLpSnapshot(
+  puuid: string,
+  tier: string,
+  rank: string,
+  lp: number,
+  wins: number,
+  losses: number,
+): void {
+  const d = getDb();
+  const now = Math.floor(Date.now() / 1000);
+
+  // Check if last snapshot has the same wins+losses (no new games played)
+  const last = d
+    .prepare(
+      "SELECT wins, losses FROM lp_history WHERE puuid = ? ORDER BY recorded_at DESC LIMIT 1"
+    )
+    .get(puuid) as { wins: number; losses: number } | undefined;
+
+  if (last && last.wins === wins && last.losses === losses) {
+    return; // No change, skip recording
+  }
+
+  d.prepare(
+    "INSERT INTO lp_history (puuid, tier, rank, lp, wins, losses, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(puuid, tier, rank, lp, wins, losses, now);
+}
+
+/**
+ * Get LP snapshots for a puuid, ordered by recorded_at ascending.
+ */
+export function getLpSnapshots(puuid: string, limit = 100): LpSnapshot[] {
+  const d = getDb();
+  return d
+    .prepare(
+      "SELECT tier, rank, lp, wins, losses, recorded_at FROM lp_history WHERE puuid = ? ORDER BY recorded_at ASC LIMIT ?"
+    )
+    .all(puuid, limit) as LpSnapshot[];
 }
