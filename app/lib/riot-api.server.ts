@@ -297,9 +297,9 @@ interface CachedRanked {
   data: RankedData | null;
 }
 
-export async function getRankedByPuuid(puuid: string): Promise<RankedData | null> {
+export async function getRankedByPuuid(puuid: string, forceFresh = false): Promise<RankedData | null> {
   const cacheKey = `ranked:${puuid}`;
-  const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
+  const cached = !forceFresh ? cacheGet<CachedRanked>(cacheKey, RANKED_TTL) : null;
   if (cached) {
     console.log(`[riot-api] CACHE HIT ${cacheKey}`);
     return cached.data;

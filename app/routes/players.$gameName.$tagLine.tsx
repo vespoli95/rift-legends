@@ -167,7 +167,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   try {
     const [summoner, rankedData] = await Promise.all([
       getSummonerByPuuid(puuid),
-      getRankedByPuuid(puuid),
+      getRankedByPuuid(puuid, true), // Force fresh data to capture LP snapshots
     ]);
     profileIconId = summoner.profileIconId;
     ranked = rankedData;
