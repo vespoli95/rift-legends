@@ -87,8 +87,8 @@ export function riftScore(match: {
 
   // Supports: boost KDA & vision weight, reduce CS/damage/gold weight
   const w = isSupport
-    ? { kda: 0.40, cs: 0.03, vision: 0.30, dmg: 0.15, gold: 0.12 }
-    : { kda: 0.35, cs: 0.15, vision: 0.10, dmg: 0.25, gold: 0.15 };
+    ? { kda: 0.37, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
+    : { kda: 0.30, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   const score =
     kdaScore * w.kda +
@@ -118,8 +118,8 @@ function riftScoreRaw(match: Parameters<typeof riftScore>[0]): number {
   const goldScore = Math.min(10, gpm / 45);
 
   const w = isSupport
-    ? { kda: 0.40, cs: 0.03, vision: 0.30, dmg: 0.15, gold: 0.12 }
-    : { kda: 0.35, cs: 0.15, vision: 0.10, dmg: 0.25, gold: 0.15 };
+    ? { kda: 0.37, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
+    : { kda: 0.30, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   return (
     kdaScore * w.kda +

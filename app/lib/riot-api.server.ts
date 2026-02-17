@@ -376,6 +376,70 @@ export async function getMatchIdsForPuuid(
   return getMatchIds(puuid, count, start);
 }
 
+// --- Season Match IDs (all matches since season start) ---
+
+// Current ranked season; update when a new season begins.
+const SEASON_START_EPOCH = Math.floor(new Date("2026-01-09T00:00:00Z").getTime() / 1000);
+const SEASON_START_MS = SEASON_START_EPOCH * 1000;
+const SEASON_IDS_TTL = 10 * 60; // 10min cache for the full ID list
+
+async function getAllSeasonMatchIds(puuid: string): Promise<string[]> {
+  const cacheKey = `season-ids:${puuid}`;
+  const cached = cacheGet<string[]>(cacheKey, SEASON_IDS_TTL);
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey} (${cached.length} ids)`);
+    return cached;
+  }
+
+  const allIds: string[] = [];
+  let offset = 0;
+  const pageSize = 100;
+  while (true) {
+    const url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?startTime=${SEASON_START_EPOCH}&start=${offset}&count=${pageSize}`;
+    const res = await riotFetch(url);
+    const ids: string[] = await res.json();
+    allIds.push(...ids);
+    if (ids.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  console.log(`[riot-api] fetched ${allIds.length} season match IDs for ${puuid}`);
+  cacheSet(cacheKey, allIds);
+  return allIds;
+}
+
+/**
+ * Fetch all season matches for a player and return processed results.
+ * Match details are individually cached (7d TTL), so repeat visits are fast.
+ */
+export async function getSeasonMatches(puuid: string): Promise<ProcessedMatch[]> {
+  const matchIds = await getAllSeasonMatchIds(puuid);
+  console.log(`[riot-api] season: processing ${matchIds.length} match IDs (startTime=${SEASON_START_EPOCH}, ${new Date(SEASON_START_MS).toISOString()})`);
+
+  let failedCount = 0;
+  const results = await Promise.all(
+    matchIds.map(async (id) => {
+      try {
+        return await getProcessedMatch(id, puuid);
+      } catch {
+        failedCount++;
+        return null;
+      }
+    }),
+  );
+
+  // Double-filter by gameCreation in case Riot API startTime isn't precise
+  const matches = results
+    .filter((m): m is ProcessedMatch => m !== null)
+    .filter((m) => m.gameCreation >= SEASON_START_MS);
+
+  if (failedCount > 0) {
+    console.warn(`[riot-api] season matches: ${matches.length} loaded, ${failedCount} failed`);
+  }
+  console.log(`[riot-api] season matches: returning ${matches.length} (after gameCreation filter)`);
+  return matches;
+}
+
 export async function getProcessedMatch(
   matchId: string,
   puuid: string
@@ -482,8 +546,10 @@ const RANKED_SOLO_QUEUE_ID = 420;
 
 /**
  * Attach LP gain/loss to ranked matches by comparing LP snapshots.
- * For each ranked match, find two consecutive LP snapshots that bracket the game.
- * If exactly one game was played between those snapshots, compute the LP delta.
+ * Groups ranked matches by the snapshot pair that brackets them, then:
+ * - If exactly 1 game between snapshots: assign exact LP delta.
+ * - If multiple games: estimate per-game LP by dividing total delta
+ *   proportionally among wins (positive share) and losses (negative share).
  */
 export function attachLpChanges(
   puuid: string,
@@ -492,35 +558,64 @@ export function attachLpChanges(
   const snapshots = getLpSnapshots(puuid);
   if (snapshots.length < 2) return;
 
-  for (const match of matches) {
-    // Only calculate LP change for ranked solo queue
-    if (match.queueId !== RANKED_SOLO_QUEUE_ID) continue;
+  // Group matches by their bracketing snapshot pair
+  const rankedMatches = matches.filter((m) => m.queueId === RANKED_SOLO_QUEUE_ID);
+  if (rankedMatches.length === 0) return;
 
-    const gameEndTime = Math.floor((match.gameCreation + match.gameDuration * 1000) / 1000);
+  // For each consecutive snapshot pair, find which ranked matches fall between them
+  for (let i = 0; i < snapshots.length - 1; i++) {
+    const before = snapshots[i];
+    const after = snapshots[i + 1];
 
-    // Find the snapshot pair that brackets this game
-    // "before" = latest snapshot recorded before the game ended
-    // "after" = earliest snapshot recorded after the game ended
-    let before: LpSnapshot | null = null;
-    let after: LpSnapshot | null = null;
+    const gamesPlayed = (after.wins + after.losses) - (before.wins + before.losses);
+    if (gamesPlayed < 1) continue;
 
-    for (const snap of snapshots) {
-      if (snap.recorded_at <= gameEndTime) {
-        before = snap;
-      } else if (!after && snap.recorded_at > gameEndTime) {
-        after = snap;
-        break;
+    const totalDelta = flatLp(after.tier, after.rank, after.lp) - flatLp(before.tier, before.rank, before.lp);
+
+    // Find ranked matches whose end time falls between these two snapshots
+    const bracketed = rankedMatches.filter((m) => {
+      const gameEndTime = Math.floor((m.gameCreation + m.gameDuration * 1000) / 1000);
+      return gameEndTime > before.recorded_at && gameEndTime <= after.recorded_at;
+    });
+
+    if (bracketed.length === 0) continue;
+
+    if (bracketed.length === 1) {
+      // Exact: only one match between snapshots
+      bracketed[0].lpChange = totalDelta;
+    } else {
+      // Estimate: distribute LP delta across matches
+      const wins = bracketed.filter((m) => m.win).length;
+      const losses = bracketed.filter((m) => !m.win).length;
+
+      if (wins === 0 || losses === 0) {
+        // All wins or all losses — divide evenly
+        const perGame = Math.round(totalDelta / bracketed.length);
+        for (const m of bracketed) {
+          m.lpChange = perGame;
+        }
+      } else {
+        // Mixed results — estimate gain/loss per game
+        // Assume gain/loss ratio ~5:4 (typical ~25 gain, ~20 loss)
+        // totalDelta = wins * gain - losses * loss, gain = 1.25 * loss
+        // totalDelta = wins * 1.25 * loss - losses * loss
+        // loss = totalDelta / (wins * 1.25 - losses)
+        const denom = wins * 1.25 - losses;
+        if (Math.abs(denom) > 0.01) {
+          const lossPerGame = totalDelta / denom;
+          const gainPerGame = 1.25 * lossPerGame;
+          for (const m of bracketed) {
+            m.lpChange = Math.round(m.win ? gainPerGame : -Math.abs(lossPerGame));
+          }
+        } else {
+          // Fallback: divide evenly
+          const perGame = Math.round(totalDelta / bracketed.length);
+          for (const m of bracketed) {
+            m.lpChange = perGame;
+          }
+        }
       }
     }
-
-    if (!before || !after) continue;
-
-    // Only attribute LP change if exactly 1 game was played between snapshots
-    const totalGamesBefore = before.wins + before.losses;
-    const totalGamesAfter = after.wins + after.losses;
-    if (totalGamesAfter - totalGamesBefore !== 1) continue;
-
-    match.lpChange = flatLp(after.tier, after.rank, after.lp) - flatLp(before.tier, before.rank, before.lp);
   }
 }
 

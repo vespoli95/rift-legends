@@ -10,10 +10,13 @@ import {
   getProcessedMatch,
   getRankedByPuuid,
   attachLpChanges,
+  getSeasonMatches,
   RiotApiError,
 } from "~/lib/riot-api.server";
 import { profileIconUrl } from "~/lib/ddragon";
 import { MatchCard } from "~/components/match-card";
+import { riftScore, riftScoreColor } from "~/lib/utils";
+import { spriteStyle } from "~/lib/ddragon";
 import type { ProcessedMatch, RankedInfo } from "~/lib/types";
 
 const TIER_COLORS: Record<string, string> = {
@@ -140,6 +143,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         puuid: null,
         ranked: null,
         matches: [],
+        seasonMatches: [],
         start: 0,
         hasMore: false,
         error: "Player not found",
@@ -154,72 +158,42 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       puuid: null,
       ranked: null,
       matches: [],
+      seasonMatches: [],
       start: 0,
       hasMore: false,
       error: "Failed to look up player",
     };
   }
 
-  // Get summoner for profile icon and ranked data in parallel
-  let profileIconId: number | null = null;
-  let ranked: RankedInfo | null = null;
-
-  try {
-    const [summoner, rankedData] = await Promise.all([
-      getSummonerByPuuid(puuid),
-      getRankedByPuuid(puuid, true), // Force fresh data to capture LP snapshots
-    ]);
-    profileIconId = summoner.profileIconId;
-    ranked = rankedData;
-  } catch {
-    // Non-critical
-  }
-
-  // Load matches
+  // Load profile, ranked, paginated matches, and season matches in parallel
   const url = new URL(request.url);
   const start = parseInt(url.searchParams.get("start") || "0", 10);
 
-  try {
-    const matchIds = await getMatchIdsForPuuid(puuid, MATCHES_PER_PAGE, start);
+  let profileIconId: number | null = null;
+  let ranked: RankedInfo | null = null;
+  let seasonMatches: ProcessedMatch[] = [];
 
-    let failedCount = 0;
-    const results = await Promise.all(
-      matchIds.map(async (id) => {
-        try {
-          return await getProcessedMatch(id, puuid);
-        } catch {
-          failedCount++;
-          return null;
-        }
-      })
-    );
+  // Fire off all parallel fetches
+  const [profileResult, seasonResult, matchIdsResult] = await Promise.allSettled([
+    Promise.all([
+      getSummonerByPuuid(puuid),
+      getRankedByPuuid(puuid, true),
+    ]),
+    getSeasonMatches(puuid),
+    getMatchIdsForPuuid(puuid, MATCHES_PER_PAGE, start),
+  ]);
 
-    const matches = results.filter((m): m is ProcessedMatch => m !== null);
+  if (profileResult.status === "fulfilled") {
+    const [summoner, rankedData] = profileResult.value;
+    profileIconId = summoner.profileIconId;
+    ranked = rankedData;
+  }
 
-    // Attach LP gain/loss data to ranked matches
-    attachLpChanges(puuid, matches);
+  if (seasonResult.status === "fulfilled") {
+    seasonMatches = seasonResult.value;
+  }
 
-    let warning: string | undefined;
-    if (failedCount > 0 && matches.length > 0) {
-      warning = `Loaded ${matches.length} of ${matchIds.length} matches (${failedCount} failed due to rate limiting)`;
-    } else if (failedCount > 0 && matches.length === 0) {
-      warning = "All matches failed to load — try again shortly";
-    }
-
-    return {
-      version,
-      sprites,
-      gameName: actualGameName,
-      tagLine: actualTagLine,
-      profileIconId,
-      puuid,
-      ranked,
-      matches,
-      start,
-      hasMore: matchIds.length === MATCHES_PER_PAGE,
-      warning,
-    };
-  } catch {
+  if (matchIdsResult.status === "rejected") {
     return {
       version,
       sprites,
@@ -229,11 +203,51 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       puuid,
       ranked,
       matches: [],
+      seasonMatches,
       start: 0,
       hasMore: false,
       error: "Failed to load match history",
     };
   }
+
+  const matchIds = matchIdsResult.value;
+
+  let failedCount = 0;
+  const results = await Promise.all(
+    matchIds.map(async (id) => {
+      try {
+        return await getProcessedMatch(id, puuid);
+      } catch {
+        failedCount++;
+        return null;
+      }
+    })
+  );
+
+  const matches = results.filter((m): m is ProcessedMatch => m !== null);
+  attachLpChanges(puuid, matches);
+
+  let warning: string | undefined;
+  if (failedCount > 0 && matches.length > 0) {
+    warning = `Loaded ${matches.length} of ${matchIds.length} matches (${failedCount} failed due to rate limiting)`;
+  } else if (failedCount > 0 && matches.length === 0) {
+    warning = "All matches failed to load — try again shortly";
+  }
+
+  return {
+    version,
+    sprites,
+    gameName: actualGameName,
+    tagLine: actualTagLine,
+    profileIconId,
+    puuid,
+    ranked,
+    matches,
+    seasonMatches,
+    start,
+    hasMore: matchIds.length === MATCHES_PER_PAGE,
+    warning,
+  };
 }
 
 export default function PlayerPage({ loaderData }: Route.ComponentProps) {
@@ -245,6 +259,7 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
     profileIconId,
     ranked,
     matches: initialMatches,
+    seasonMatches,
     start,
     hasMore,
     error,
@@ -274,21 +289,77 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
     }
   }, [fetcher.data, currentStart]);
 
-  // Get unique queue IDs for filter
+  // Get unique queue IDs for filter (from season matches for full coverage)
   const availableQueues = useMemo(() => {
-    const queues = new Set(matches.map((m) => m.queueId));
+    const queues = new Set([
+      ...matches.map((m) => m.queueId),
+      ...seasonMatches.map((m) => m.queueId),
+    ]);
     return Array.from(queues).sort((a, b) => {
       const nameA = getQueueName(a);
       const nameB = getQueueName(b);
       return nameA.localeCompare(nameB);
     });
-  }, [matches]);
+  }, [matches, seasonMatches]);
 
   // Filter and group matches
   const filteredMatches = useMemo(() => {
     if (selectedQueue === null) return matches;
     return matches.filter((m) => m.queueId === selectedQueue);
   }, [matches, selectedQueue]);
+
+  // Filter season matches by selected queue for champion stats
+  const filteredSeasonMatches = useMemo(() => {
+    if (selectedQueue === null) return seasonMatches;
+    return seasonMatches.filter((m) => m.queueId === selectedQueue);
+  }, [seasonMatches, selectedQueue]);
+
+  const championStats = useMemo(() => {
+    const byChamp = new Map<string, { games: number; wins: number; kills: number; deaths: number; assists: number; csPerMin: number; rsTotal: number }>();
+    for (const m of filteredSeasonMatches) {
+      const existing = byChamp.get(m.championName) || { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, csPerMin: 0, rsTotal: 0 };
+      existing.games++;
+      if (m.win) existing.wins++;
+      existing.kills += m.kills;
+      existing.deaths += m.deaths;
+      existing.assists += m.assists;
+      existing.csPerMin += m.csPerMin;
+      existing.rsTotal += riftScore({
+        kills: m.kills,
+        deaths: m.deaths,
+        assists: m.assists,
+        csPerMin: m.csPerMin,
+        visionScore: m.visionScore,
+        totalDamageDealtToChampions: m.totalDamageDealtToChampions,
+        goldEarned: m.goldEarned,
+        gameDuration: m.gameDuration,
+        teamPosition: m.teamPosition,
+      });
+      byChamp.set(m.championName, existing);
+    }
+    return Array.from(byChamp.entries())
+      .map(([name, s]) => ({
+        championName: name,
+        games: s.games,
+        winRate: Math.round((s.wins / s.games) * 100),
+        avgKills: (s.kills / s.games).toFixed(1),
+        avgDeaths: (s.deaths / s.games).toFixed(1),
+        avgAssists: (s.assists / s.games).toFixed(1),
+        kdaRatio: s.deaths === 0 ? "Perfect" : ((s.kills + s.assists) / s.deaths).toFixed(2),
+        avgCsPerMin: (s.csPerMin / s.games).toFixed(1),
+        avgRs: Math.round((s.rsTotal / s.games) * 10) / 10,
+      }))
+      .sort((a, b) => b.games - a.games);
+  }, [filteredSeasonMatches]);
+
+  const [showAllChamps, setShowAllChamps] = useState(false);
+
+  // Reset expand state when filter changes
+  useEffect(() => {
+    setShowAllChamps(false);
+  }, [selectedQueue]);
+
+  const displayedChamps = showAllChamps ? championStats : championStats.slice(0, 5);
 
   const groupedMatches = useMemo(() => {
     return groupMatchesByDay(filteredMatches);
@@ -386,6 +457,74 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
               {getQueueName(queueId)}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Champion Stats */}
+      {championStats.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-3 flex items-baseline gap-2">
+            <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">Champion Stats</h2>
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              Season {new Date().getFullYear()} — {filteredSeasonMatches.length} games
+            </span>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  <th className="px-3 py-2">Champion</th>
+                  <th className="px-3 py-2 text-center">Games</th>
+                  <th className="px-3 py-2 text-center">Win%</th>
+                  <th className="px-3 py-2 text-center">Avg KDA</th>
+                  <th className="px-3 py-2 text-center">CS/min</th>
+                  <th className="px-3 py-2 text-center">Avg RS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {displayedChamps.map((champ) => {
+                  const champSprite = sprites.champions[champ.championName];
+                  const winRateColor = champ.winRate >= 55 ? "text-green-500" : champ.winRate <= 45 ? "text-red-500" : "text-gray-700 dark:text-gray-300";
+                  return (
+                    <tr key={champ.championName} className="bg-white dark:bg-gray-900">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          {champSprite ? (
+                            <div
+                              className="shrink-0 rounded"
+                              style={spriteStyle(version, champSprite, sprites.sheetSizes, 24)}
+                            />
+                          ) : (
+                            <div className="h-6 w-6 shrink-0 rounded bg-gray-200 dark:bg-gray-700" />
+                          )}
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {sprites.championNames[champ.championName] || champ.championName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-center text-gray-700 dark:text-gray-300">{champ.games}</td>
+                      <td className={`px-3 py-2 text-center font-medium ${winRateColor}`}>{champ.winRate}%</td>
+                      <td className="px-3 py-2 text-center text-gray-700 dark:text-gray-300">
+                        {champ.avgKills}/{champ.avgDeaths}/{champ.avgAssists}{" "}
+                        <span className="text-xs text-gray-400">({champ.kdaRatio})</span>
+                      </td>
+                      <td className="px-3 py-2 text-center text-gray-700 dark:text-gray-300">{champ.avgCsPerMin}</td>
+                      <td className={`px-3 py-2 text-center font-semibold ${riftScoreColor(champ.avgRs)}`}>{champ.avgRs}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {championStats.length > 5 && (
+              <button
+                type="button"
+                onClick={() => setShowAllChamps(!showAllChamps)}
+                className="w-full cursor-pointer border-t border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs font-medium text-indigo-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:hover:bg-gray-700"
+              >
+                {showAllChamps ? "Show Less" : `Show All ${championStats.length} Champions`}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
