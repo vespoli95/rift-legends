@@ -10,6 +10,7 @@ import {
   getProcessedMatch,
   getRankedByPuuid,
   attachLpChanges,
+  ensureFreshLpSnapshot,
   RiotApiError,
 } from "~/lib/riot-api.server";
 import { profileIconUrl } from "~/lib/ddragon";
@@ -198,6 +199,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
     // Attach LP gain/loss data to ranked matches
     attachLpChanges(puuid, matches);
+    await ensureFreshLpSnapshot(puuid, matches);
 
     let warning: string | undefined;
     if (failedCount > 0 && matches.length > 0) {

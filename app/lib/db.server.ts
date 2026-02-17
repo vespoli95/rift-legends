@@ -352,3 +352,17 @@ export function getLpSnapshots(puuid: string, limit = 100): LpSnapshot[] {
     )
     .all(puuid, limit) as LpSnapshot[];
 }
+
+/**
+ * Get the most recent LP snapshot for a puuid, or null if none exists.
+ */
+export function getLatestLpSnapshot(puuid: string): LpSnapshot | null {
+  const d = getDb();
+  return (
+    d
+      .prepare(
+        "SELECT tier, rank, lp, wins, losses, recorded_at FROM lp_history WHERE puuid = ? ORDER BY recorded_at DESC LIMIT 1"
+      )
+      .get(puuid) as LpSnapshot | undefined
+  ) ?? null;
+}

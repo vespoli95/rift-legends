@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet, recordLpSnapshot, getLpSnapshots } from "./db.server";
+import { cacheGet, cacheSet, recordLpSnapshot, getLpSnapshots, getLatestLpSnapshot } from "./db.server";
 import type { LpSnapshot } from "./db.server";
 import type {
   RiotAccount,
@@ -297,12 +297,14 @@ interface CachedRanked {
   data: RankedData | null;
 }
 
-export async function getRankedByPuuid(puuid: string): Promise<RankedData | null> {
+export async function getRankedByPuuid(puuid: string, forceRefresh = false): Promise<RankedData | null> {
   const cacheKey = `ranked:${puuid}`;
-  const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
-  if (cached) {
-    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
-    return cached.data;
+  if (!forceRefresh) {
+    const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
+    if (cached) {
+      console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+      return cached.data;
+    }
   }
 
   try {
@@ -524,6 +526,32 @@ export function attachLpChanges(
   }
 }
 
+/**
+ * If there are ranked matches without LP data that finished after the latest
+ * snapshot, force-refresh ranked data to record a new "after" snapshot,
+ * then re-attach LP changes. This ensures LP changes show up without waiting
+ * for the ranked cache to expire.
+ */
+export async function ensureFreshLpSnapshot(
+  puuid: string,
+  matches: ProcessedMatch[],
+): Promise<void> {
+  const latestSnap = getLatestLpSnapshot(puuid);
+  if (!latestSnap) return; // No history at all — nothing to compare against
+
+  const hasNewerUnbracketed = matches.some((m) => {
+    if (m.queueId !== RANKED_SOLO_QUEUE_ID || m.lpChange != null) return false;
+    const gameEndSec = (m.gameCreation + m.gameDuration * 1000) / 1000;
+    return gameEndSec > latestSnap.recorded_at;
+  });
+
+  if (!hasNewerUnbracketed) return;
+
+  // Force-fetch fresh ranked data (bypassing cache) to record a new snapshot
+  await getRankedByPuuid(puuid, true);
+  attachLpChanges(puuid, matches);
+}
+
 // --- High-level: Get Member Match History ---
 
 export async function getMemberMatchHistory(
@@ -566,6 +594,10 @@ export async function getMemberMatchHistory(
 
     // Attach LP gain/loss data to ranked matches
     attachLpChanges(puuid, matches);
+
+    // If there are ranked matches without LP data that are newer than our
+    // latest snapshot, force-refresh ranked data to record a new snapshot
+    await ensureFreshLpSnapshot(puuid, matches);
 
     let error: string | undefined;
     if (failedCount > 0 && matches.length > 0) {
