@@ -136,6 +136,16 @@ export function MatchCard({
         <p className="text-xs text-gray-500 dark:text-gray-400">vision</p>
       </div>
 
+      {/* Damage */}
+      <div className="hidden min-w-[55px] flex-shrink-0 text-center md:block">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {(match.totalDamageDealtToChampions / 1000).toFixed(1)}k
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {(match.totalDamageTaken / 1000).toFixed(1)}k taken
+        </p>
+      </div>
+
       {/* Items */}
       <div className="hidden flex-shrink-0 items-center gap-0.5 md:flex">
         {match.items.map((itemId, i) => (
