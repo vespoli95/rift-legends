@@ -5,6 +5,7 @@ import type {
   ProcessedMatch,
   TeamMember,
   MemberWithMatches,
+  ActiveGameInfo,
 } from "./types";
 import { csPerMin, computeGameRanks } from "./utils";
 
@@ -519,6 +520,68 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     gameRank,
     teamPosition: participant.teamPosition,
   };
+}
+
+// --- Spectator (Active Game) ---
+
+const ACTIVE_GAME_TTL = 15; // 15 seconds
+
+export async function getActiveGame(puuid: string): Promise<ActiveGameInfo | null> {
+  const cacheKey = `active-game:${puuid}`;
+  const cached = cacheGet<{ active: boolean; data: ActiveGameInfo | null }>(cacheKey, ACTIVE_GAME_TTL);
+  if (cached) {
+    console.log(`[riot-api] CACHE HIT ${cacheKey}`);
+    return cached.data;
+  }
+
+  try {
+    const url = `${NA1_BASE}/lol/spectator/v5/active-games/by-summoner/${puuid}`;
+    const res = await riotFetch(url);
+    const data = await res.json();
+
+    const participant = data.participants?.find(
+      (p: { puuid: string }) => p.puuid === puuid,
+    );
+
+    const info: ActiveGameInfo = {
+      gameId: data.gameId,
+      gameMode: data.gameMode,
+      gameStartTime: data.gameStartTime,
+      championId: participant?.championId ?? 0,
+    };
+
+    cacheSet(cacheKey, { active: true, data: info });
+    return info;
+  } catch (error) {
+    if (error instanceof RiotApiError && error.status === 404) {
+      cacheSet(cacheKey, { active: false, data: null });
+      return null;
+    }
+    console.error(`[riot-api] spectator error for ${puuid}:`, error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+export async function getActiveGamesForTeam(
+  members: TeamMember[],
+): Promise<Record<number, ActiveGameInfo | null>> {
+  const results: Record<number, ActiveGameInfo | null> = {};
+
+  const settled = await Promise.allSettled(
+    members.map(async (member) => {
+      if (!member.puuid) return { memberId: member.id, game: null };
+      const game = await getActiveGame(member.puuid);
+      return { memberId: member.id, game };
+    }),
+  );
+
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      results[result.value.memberId] = result.value.game;
+    }
+  }
+
+  return results;
 }
 
 // --- High-level: Get Member Match History ---

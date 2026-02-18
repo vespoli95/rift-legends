@@ -17,6 +17,8 @@ import { MatchCard } from "~/components/match-card";
 import { riftScore, riftScoreColor } from "~/lib/utils";
 import { spriteStyle } from "~/lib/ddragon";
 import type { ProcessedMatch, RankedInfo } from "~/lib/types";
+import { useLiveGame } from "~/hooks/use-live-game";
+import { LiveGameBadge } from "~/components/live-game-badge";
 
 const TIER_COLORS: Record<string, string> = {
   IRON: "text-gray-500",
@@ -264,6 +266,7 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
     warning,
   } = loaderData;
 
+  const liveGame = useLiveGame(loaderData.puuid);
   const [matches, setMatches] = useState<ProcessedMatch[]>(initialMatches);
   const [currentStart, setCurrentStart] = useState(start);
   const [canLoadMore, setCanLoadMore] = useState(hasMore);
@@ -409,6 +412,9 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
             <RankBadge ranked={ranked} />
           ) : (
             <p className="text-sm text-gray-500 dark:text-gray-400">Unranked</p>
+          )}
+          {liveGame && (
+            <LiveGameBadge game={liveGame} sprites={sprites} version={version} />
           )}
         </div>
       </div>

@@ -1,8 +1,9 @@
 import { Form, Link } from "react-router";
-import type { MemberWithMatches, RankedInfo, TeamMember } from "~/lib/types";
+import type { MemberWithMatches, RankedInfo, TeamMember, ActiveGameInfo } from "~/lib/types";
 import { profileIconUrl } from "~/lib/ddragon";
 import type { SpriteData } from "~/lib/ddragon";
 import { MatchCard } from "./match-card";
+import { LiveGameBadge } from "./live-game-badge";
 
 const DEFAULT_VISIBLE = 3;
 
@@ -64,11 +65,15 @@ function MemberHeader({
   version,
   ranked,
   isEditing,
+  liveGame,
+  sprites,
 }: {
   member: TeamMember;
   version: string;
   ranked?: RankedInfo | null;
   isEditing?: boolean;
+  liveGame?: ActiveGameInfo | null;
+  sprites?: SpriteData;
 }) {
   const playerUrl = `/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`;
 
@@ -96,6 +101,9 @@ function MemberHeader({
               <span className="text-gray-400">#{member.tag_line}</span>
             </h3>
             {ranked && <RankBadge ranked={ranked} />}
+            {liveGame && sprites && (
+              <LiveGameBadge game={liveGame} sprites={sprites} version={version} />
+            )}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {ranked ? `${ranked.wins}W ${ranked.losses}L` : "View all games"}
@@ -126,6 +134,7 @@ export function MemberSection({
   isEditing = false,
   retrying = false,
   onRetry,
+  liveGame,
 }: {
   data: MemberWithMatches;
   version: string;
@@ -133,6 +142,7 @@ export function MemberSection({
   isEditing?: boolean;
   retrying?: boolean;
   onRetry?: () => void;
+  liveGame?: ActiveGameInfo | null;
 }) {
   const { member, matches, ranked, error } = data;
 
@@ -142,7 +152,7 @@ export function MemberSection({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <MemberHeader member={member} version={version} ranked={ranked} isEditing={isEditing} />
+      <MemberHeader member={member} version={version} ranked={ranked} isEditing={isEditing} liveGame={liveGame} sprites={sprites} />
 
       {/* Content */}
       <div className="space-y-1.5 p-3">
@@ -227,12 +237,16 @@ export function MemberCard({
   isEditing = false,
   retrying = false,
   onRetry,
+  liveGame,
+  sprites,
 }: {
   data: MemberWithMatches;
   version: string;
   isEditing?: boolean;
   retrying?: boolean;
   onRetry?: () => void;
+  liveGame?: ActiveGameInfo | null;
+  sprites?: SpriteData;
 }) {
   const { member, matches, ranked, error } = data;
   const playerUrl = `/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`;
@@ -274,6 +288,9 @@ export function MemberCard({
           <p className="text-xs text-gray-400 dark:text-gray-500">#{member.tag_line}</p>
         </div>
         {ranked && <RankBadge ranked={ranked} />}
+        {liveGame && sprites && (
+          <LiveGameBadge game={liveGame} sprites={sprites} version={version} compact />
+        )}
         {matches.length > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             <span className="text-green-600 dark:text-green-400">{wins}W</span>

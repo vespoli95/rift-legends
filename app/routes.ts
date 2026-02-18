@@ -8,4 +8,6 @@ export default [
   route("matches/:matchId", "routes/matches.$matchId.tsx"),
   route("api/search-players", "routes/api.search-players.tsx"),
   route("api/member-history/:memberId", "routes/api.member-history.$memberId.tsx"),
+  route("api/live-games/:teamId", "routes/api.live-games.$teamId.tsx"),
+  route("api/live-game/:puuid", "routes/api.live-game.$puuid.tsx"),
 ] satisfies RouteConfig;

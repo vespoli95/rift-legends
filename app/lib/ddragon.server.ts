@@ -43,10 +43,12 @@ export async function getSpriteData(version: string): Promise<SpriteData> {
 
   const champions: Record<string, SpriteCoords> = {};
   const championNames: Record<string, string> = {};
+  const championById: Record<number, string> = {};
   for (const [key, val] of Object.entries(champJson.data)) {
-    const entry = val as { name: string; image: { sprite: string; x: number; y: number; w: number; h: number } };
+    const entry = val as { key: string; name: string; image: { sprite: string; x: number; y: number; w: number; h: number } };
     champions[key] = { sprite: entry.image.sprite, x: entry.image.x, y: entry.image.y, w: entry.image.w, h: entry.image.h };
     championNames[key] = entry.name;
+    championById[parseInt(entry.key)] = key;
     trackSheet(entry.image.sprite, entry.image.x, entry.image.y, entry.image.w, entry.image.h);
   }
 
@@ -68,7 +70,7 @@ export async function getSpriteData(version: string): Promise<SpriteData> {
     trackSheet(entry.image.sprite, entry.image.x, entry.image.y, entry.image.w, entry.image.h);
   }
 
-  const data: SpriteData = { champions, items, spells, sheetSizes, championNames, itemNames, spellNames };
+  const data: SpriteData = { champions, items, spells, sheetSizes, championNames, championById, itemNames, spellNames };
   cacheSet(cacheKey, data);
   return data;
 }

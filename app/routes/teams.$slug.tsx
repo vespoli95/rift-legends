@@ -27,7 +27,8 @@ import {
 import { MatchCard } from "~/components/match-card";
 import { PlayerSearch } from "~/components/player-search";
 import { EmojiPicker } from "~/components/emoji-picker";
-import type { MemberWithMatches, ProcessedMatch, TeamMember } from "~/lib/types";
+import type { MemberWithMatches, ProcessedMatch, TeamMember, ActiveGameInfo } from "~/lib/types";
+import { useLiveGames } from "~/hooks/use-live-games";
 
 export function meta({ data }: Route.MetaArgs) {
   const teamName = data?.team?.name || "Team";
@@ -325,6 +326,9 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
     setLayout(mode);
     localStorage.setItem("rift-legends-layout", mode);
   }
+
+  // --- Live game status ---
+  const liveGames = useLiveGames(team.id);
 
   // --- Lazy member data loading ---
   const { loadedData, retryingIds, manualRetry, isMaxedOut } = useMemberData(members);
@@ -755,6 +759,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                     isEditing={isEditing}
                     retrying={retryingIds.has(member.id)}
                     onRetry={isMaxedOut(member.id) ? () => manualRetry(member.id) : undefined}
+                    liveGame={liveGames[member.id]}
                   />
                 ) : (
                   <MemberSectionSkeleton
@@ -791,6 +796,8 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                     isEditing={isEditing}
                     retrying={retryingIds.has(member.id)}
                     onRetry={isMaxedOut(member.id) ? () => manualRetry(member.id) : undefined}
+                    liveGame={liveGames[member.id]}
+                    sprites={sprites}
                   />
                 ) : (
                   <MemberCardSkeleton

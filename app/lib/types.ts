@@ -96,6 +96,13 @@ export interface ProcessedMatch {
   teamPosition: string;
 }
 
+export interface ActiveGameInfo {
+  gameId: number;
+  gameMode: string;
+  gameStartTime: number;  // epoch ms
+  championId: number;
+}
+
 export interface RankedInfo {
   tier: string;
   rank: string;
