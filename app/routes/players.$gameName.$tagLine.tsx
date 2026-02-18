@@ -9,7 +9,6 @@ import {
   getMatchIdsForPuuid,
   getProcessedMatch,
   getRankedByPuuid,
-  attachLpChanges,
   getSeasonMatches,
   RiotApiError,
 } from "~/lib/riot-api.server";
@@ -177,7 +176,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const [profileResult, seasonResult, matchIdsResult] = await Promise.allSettled([
     Promise.all([
       getSummonerByPuuid(puuid),
-      getRankedByPuuid(puuid, true),
+      getRankedByPuuid(puuid),
     ]),
     getSeasonMatches(puuid),
     getMatchIdsForPuuid(puuid, MATCHES_PER_PAGE, start),
@@ -225,7 +224,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   );
 
   const matches = results.filter((m): m is ProcessedMatch => m !== null);
-  attachLpChanges(puuid, matches);
 
   let warning: string | undefined;
   if (failedCount > 0 && matches.length > 0) {

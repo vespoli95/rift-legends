@@ -1,5 +1,4 @@
-import { cacheGet, cacheSet, recordLpSnapshot, getLpSnapshots } from "./db.server";
-import type { LpSnapshot } from "./db.server";
+import { cacheGet, cacheSet } from "./db.server";
 import type {
   RiotAccount,
   MatchDetail,
@@ -297,9 +296,9 @@ interface CachedRanked {
   data: RankedData | null;
 }
 
-export async function getRankedByPuuid(puuid: string, forceFresh = false): Promise<RankedData | null> {
+export async function getRankedByPuuid(puuid: string): Promise<RankedData | null> {
   const cacheKey = `ranked:${puuid}`;
-  const cached = !forceFresh ? cacheGet<CachedRanked>(cacheKey, RANKED_TTL) : null;
+  const cached = cacheGet<CachedRanked>(cacheKey, RANKED_TTL);
   if (cached) {
     console.log(`[riot-api] CACHE HIT ${cacheKey}`);
     return cached.data;
@@ -328,10 +327,6 @@ export async function getRankedByPuuid(puuid: string, forceFresh = false): Promi
     };
 
     cacheSet(cacheKey, { hasRank: true, data: ranked });
-
-    // Record LP snapshot for LP gain/loss tracking
-    recordLpSnapshot(puuid, ranked.tier, ranked.rank, ranked.lp, ranked.wins, ranked.losses);
-
     return ranked;
   } catch (error) {
     console.error("Failed to fetch ranked data:", error);
@@ -526,99 +521,6 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
   };
 }
 
-// --- LP Change Calculation ---
-
-const TIER_ORDER = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
-const RANK_ORDER = ["IV", "III", "II", "I"];
-
-/** Convert tier/rank/lp to a flat LP number for easy delta calculation. */
-function flatLp(tier: string, rank: string, lp: number): number {
-  const tierIndex = TIER_ORDER.indexOf(tier);
-  if (tierIndex >= 0) {
-    const rankIndex = RANK_ORDER.indexOf(rank);
-    return tierIndex * 400 + (rankIndex >= 0 ? rankIndex : 0) * 100 + lp;
-  }
-  // Master, Grandmaster, Challenger share a flat LP ladder above Diamond
-  return 2800 + lp;
-}
-
-const RANKED_SOLO_QUEUE_ID = 420;
-
-/**
- * Attach LP gain/loss to ranked matches by comparing LP snapshots.
- * Groups ranked matches by the snapshot pair that brackets them, then:
- * - If exactly 1 game between snapshots: assign exact LP delta.
- * - If multiple games: estimate per-game LP by dividing total delta
- *   proportionally among wins (positive share) and losses (negative share).
- */
-export function attachLpChanges(
-  puuid: string,
-  matches: ProcessedMatch[],
-): void {
-  const snapshots = getLpSnapshots(puuid);
-  if (snapshots.length < 2) return;
-
-  // Group matches by their bracketing snapshot pair
-  const rankedMatches = matches.filter((m) => m.queueId === RANKED_SOLO_QUEUE_ID);
-  if (rankedMatches.length === 0) return;
-
-  // For each consecutive snapshot pair, find which ranked matches fall between them
-  for (let i = 0; i < snapshots.length - 1; i++) {
-    const before = snapshots[i];
-    const after = snapshots[i + 1];
-
-    const gamesPlayed = (after.wins + after.losses) - (before.wins + before.losses);
-    if (gamesPlayed < 1) continue;
-
-    const totalDelta = flatLp(after.tier, after.rank, after.lp) - flatLp(before.tier, before.rank, before.lp);
-
-    // Find ranked matches whose end time falls between these two snapshots
-    const bracketed = rankedMatches.filter((m) => {
-      const gameEndTime = Math.floor((m.gameCreation + m.gameDuration * 1000) / 1000);
-      return gameEndTime > before.recorded_at && gameEndTime <= after.recorded_at;
-    });
-
-    if (bracketed.length === 0) continue;
-
-    if (bracketed.length === 1) {
-      // Exact: only one match between snapshots
-      bracketed[0].lpChange = totalDelta;
-    } else {
-      // Estimate: distribute LP delta across matches
-      const wins = bracketed.filter((m) => m.win).length;
-      const losses = bracketed.filter((m) => !m.win).length;
-
-      if (wins === 0 || losses === 0) {
-        // All wins or all losses — divide evenly
-        const perGame = Math.round(totalDelta / bracketed.length);
-        for (const m of bracketed) {
-          m.lpChange = perGame;
-        }
-      } else {
-        // Mixed results — estimate gain/loss per game
-        // Assume gain/loss ratio ~5:4 (typical ~25 gain, ~20 loss)
-        // totalDelta = wins * gain - losses * loss, gain = 1.25 * loss
-        // totalDelta = wins * 1.25 * loss - losses * loss
-        // loss = totalDelta / (wins * 1.25 - losses)
-        const denom = wins * 1.25 - losses;
-        if (Math.abs(denom) > 0.01) {
-          const lossPerGame = totalDelta / denom;
-          const gainPerGame = 1.25 * lossPerGame;
-          for (const m of bracketed) {
-            m.lpChange = Math.round(m.win ? gainPerGame : -Math.abs(lossPerGame));
-          }
-        } else {
-          // Fallback: divide evenly
-          const perGame = Math.round(totalDelta / bracketed.length);
-          for (const m of bracketed) {
-            m.lpChange = perGame;
-          }
-        }
-      }
-    }
-  }
-}
-
 // --- High-level: Get Member Match History ---
 
 export async function getMemberMatchHistory(
@@ -658,9 +560,6 @@ export async function getMemberMatchHistory(
       .filter((m): m is MatchDetail => m !== null)
       .map((m) => processMatch(m, puuid))
       .filter((m): m is ProcessedMatch => m !== null);
-
-    // Attach LP gain/loss data to ranked matches
-    attachLpChanges(puuid, matches);
 
     let error: string | undefined;
     if (failedCount > 0 && matches.length > 0) {

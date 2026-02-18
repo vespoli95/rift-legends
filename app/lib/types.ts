@@ -94,7 +94,6 @@ export interface ProcessedMatch {
   goldEarned: number;
   gameRank: number;
   teamPosition: string;
-  lpChange?: number;
 }
 
 export interface RankedInfo {

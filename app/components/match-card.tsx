@@ -166,19 +166,6 @@ export function MatchCard({
       <div className="ml-auto min-w-0 flex-shrink text-right">
         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
           {match.win ? "Victory" : "Defeat"}
-          {match.lpChange != null && (
-            <span
-              className={`ml-1 font-bold ${
-                match.lpChange > 0
-                  ? "text-green-600 dark:text-green-400"
-                  : match.lpChange < 0
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-gray-500 dark:text-gray-400"
-              }`}
-            >
-              {match.lpChange > 0 ? "+" : ""}{match.lpChange} LP
-            </span>
-          )}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {formatDuration(match.gameDuration)}
