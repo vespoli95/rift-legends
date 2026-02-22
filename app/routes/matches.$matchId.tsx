@@ -20,6 +20,7 @@ import {
   computeGameRanks,
 } from "~/lib/utils";
 import type { MatchParticipant } from "~/lib/types";
+import { getTeamBySlug, getTeamMembers } from "~/lib/db.server";
 
 export function meta({ data }: Route.MetaArgs) {
   if (!data) return [{ title: "Match - Rift Legends" }];
@@ -27,7 +28,7 @@ export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${queue} Match - Rift Legends` }];
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const match = await getMatchDetail(params.matchId);
 
   let version = "14.10.1";
@@ -49,6 +50,18 @@ export async function loader({ params }: Route.LoaderArgs) {
     rankMap[puuid] = rank;
   }
 
+  // Resolve team member PUUIDs if a team slug was provided
+  const url = new URL(request.url);
+  const teamSlug = url.searchParams.get("team");
+  let teamMemberPuuids: string[] = [];
+  if (teamSlug) {
+    const team = getTeamBySlug(teamSlug);
+    if (team) {
+      const members = getTeamMembers(team.id);
+      teamMemberPuuids = members.map((m) => m.puuid).filter(Boolean) as string[];
+    }
+  }
+
   // Fetch ranked data and sprite data in parallel
   const [rankedResults, sprites] = await Promise.all([
     Promise.all(
@@ -68,8 +81,16 @@ export async function loader({ params }: Route.LoaderArgs) {
     rankedMap[r.puuid] = r.ranked;
   }
 
-  return { match, version, scoreMap, rankMap, rankedMap, sprites };
+  return { match, version, scoreMap, rankMap, rankedMap, sprites, teamMemberPuuids, teamSlug };
 }
+
+const POSITION_ORDER: Record<string, number> = {
+  TOP: 0,
+  JUNGLE: 1,
+  MIDDLE: 2,
+  BOTTOM: 3,
+  UTILITY: 4,
+};
 
 const POSITION_ICON: Record<string, string> = {
   TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
@@ -115,6 +136,7 @@ function ParticipantRow({
   sprites,
   maxDamage,
   maxDamageTaken,
+  isHighlighted,
 }: {
   participant: MatchParticipant;
   version: string;
@@ -124,6 +146,7 @@ function ParticipantRow({
   sprites: SpriteData;
   maxDamage: number;
   maxDamageTaken: number;
+  isHighlighted?: boolean;
 }) {
   const spell1 = SUMMONER_SPELL_MAP[participant.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[participant.summoner2Id] || "SummonerFlash";
@@ -142,7 +165,7 @@ function ParticipantRow({
   const spell2Coords = sprites.spells?.[spell2];
 
   return (
-    <tr className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
+    <tr className={`border-b border-gray-200 last:border-b-0 dark:border-gray-700 ${isHighlighted ? "bg-indigo-50/60 dark:bg-indigo-950/30" : ""}`}>
       {/* Champion + Spells + Role */}
       <td className="py-2 pl-3 pr-2">
         <div className="flex items-center gap-1.5">
@@ -323,6 +346,7 @@ function TeamTable({
   isWinner,
   rankedMap,
   sprites,
+  highlightPuuids,
 }: {
   participants: MatchParticipant[];
   version: string;
@@ -331,10 +355,12 @@ function TeamTable({
   isWinner: boolean;
   rankedMap: Record<string, RankedData | null>;
   sprites: SpriteData;
+  highlightPuuids?: Set<string>;
 }) {
-  // Sort participants by rift score descending
+  // Sort participants by role order: Top, Jungle, Mid, Bottom, Support
   const sorted = [...participants].sort(
-    (a, b) => (scoreMap[b.puuid] ?? 0) - (scoreMap[a.puuid] ?? 0),
+    (a, b) =>
+      (POSITION_ORDER[a.teamPosition] ?? 99) - (POSITION_ORDER[b.teamPosition] ?? 99),
   );
   const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
   const maxDamageTaken = Math.max(...participants.map((p) => p.totalDamageTaken));
@@ -387,6 +413,7 @@ function TeamTable({
               sprites={sprites}
               maxDamage={maxDamage}
               maxDamageTaken={maxDamageTaken}
+              isHighlighted={highlightPuuids ? highlightPuuids.has(p.puuid) : false}
             />
           ))}
         </tbody>
@@ -396,7 +423,7 @@ function TeamTable({
 }
 
 export default function MatchDetail({ loaderData }: Route.ComponentProps) {
-  const { match, version, scoreMap, rankMap, rankedMap, sprites } = loaderData;
+  const { match, version, scoreMap, rankMap, rankedMap, sprites, teamMemberPuuids, teamSlug } = loaderData;
   const { info } = match;
 
   const queueName = QUEUE_TYPE_MAP[info.queueId] || "Game";
@@ -406,15 +433,18 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
   const redSide = info.participants.slice(5, 10);
   const blueWon = blueSide[0]?.win ?? true;
 
+  const highlightPuuids = teamMemberPuuids.length > 0 ? new Set(teamMemberPuuids) : undefined;
+  const backLink = teamSlug ? `/teams/${teamSlug}` : "/";
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       {/* Header */}
       <div className="mb-6">
         <Link
-          to="/"
+          to={backLink}
           className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
         >
-          &larr; Back
+          &larr; Back{teamSlug ? " to team" : ""}
         </Link>
         <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
           {queueName}
@@ -434,6 +464,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           isWinner={blueWon}
           rankedMap={rankedMap}
           sprites={sprites}
+          highlightPuuids={highlightPuuids}
         />
         <TeamTable
           participants={redSide}
@@ -443,6 +474,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
           isWinner={!blueWon}
           rankedMap={rankedMap}
           sprites={sprites}
+          highlightPuuids={highlightPuuids}
         />
       </div>
     </main>

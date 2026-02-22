@@ -135,6 +135,7 @@ export function MemberSection({
   retrying = false,
   onRetry,
   liveGame,
+  teamSlug,
 }: {
   data: MemberWithMatches;
   version: string;
@@ -143,6 +144,7 @@ export function MemberSection({
   retrying?: boolean;
   onRetry?: () => void;
   liveGame?: ActiveGameInfo | null;
+  teamSlug?: string;
 }) {
   const { member, matches, ranked, error } = data;
 
@@ -187,7 +189,7 @@ export function MemberSection({
           </p>
         )}
         {visibleMatches.map((match) => (
-          <MatchCard key={match.matchId} match={match} version={version} sprites={sprites} />
+          <MatchCard key={match.matchId} match={match} version={version} sprites={sprites} teamSlug={teamSlug} />
         ))}
         {hasMore && (
           <Link

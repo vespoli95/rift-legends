@@ -693,7 +693,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                             {member.game_name}
                           </Link>
                         </div>
-                        <MatchCard match={match} version={version} sprites={sprites} />
+                        <MatchCard match={match} version={version} sprites={sprites} teamSlug={team.slug} />
                       </div>
                     ))}
                   </div>
@@ -722,7 +722,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                       {timeAgo(group.entries[0].match.gameCreation)}
                     </span>
                   </div>
-                  <MatchCard match={group.entries[0].match} version={version} sprites={sprites} />
+                  <MatchCard match={group.entries[0].match} version={version} sprites={sprites} teamSlug={team.slug} />
                 </div>
               ),
             )}
@@ -760,6 +760,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                     retrying={retryingIds.has(member.id)}
                     onRetry={isMaxedOut(member.id) ? () => manualRetry(member.id) : undefined}
                     liveGame={liveGames[member.id]}
+                    teamSlug={team.slug}
                   />
                 ) : (
                   <MemberSectionSkeleton

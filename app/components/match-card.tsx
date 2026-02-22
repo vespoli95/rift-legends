@@ -20,10 +20,12 @@ export function MatchCard({
   match,
   version,
   sprites,
+  teamSlug,
 }: {
   match: ProcessedMatch;
   version: string;
   sprites: SpriteData;
+  teamSlug?: string;
 }) {
   const bgClass = match.win
     ? "bg-blue-50 border-l-blue-500 dark:bg-blue-950/30 dark:border-l-blue-400"
@@ -39,9 +41,13 @@ export function MatchCard({
   const spell1Coords = sprites.spells?.[spell1];
   const spell2Coords = sprites.spells?.[spell2];
 
+  const matchUrl = teamSlug
+    ? `/matches/${match.matchId}?team=${encodeURIComponent(teamSlug)}`
+    : `/matches/${match.matchId}`;
+
   return (
     <Link
-      to={`/matches/${match.matchId}`}
+      to={matchUrl}
       className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
     >
       {/* Champion Icon + Level */}
