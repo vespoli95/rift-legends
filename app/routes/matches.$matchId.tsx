@@ -50,15 +50,26 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     rankMap[puuid] = rank;
   }
 
-  // Resolve team member PUUIDs if a team slug was provided
+  // Resolve which participant PUUIDs belong to the team (if a team slug was provided)
   const url = new URL(request.url);
   const teamSlug = url.searchParams.get("team");
-  let teamMemberPuuids: string[] = [];
+  let highlightedPuuids: string[] = [];
   if (teamSlug) {
     const team = getTeamBySlug(teamSlug);
     if (team) {
       const members = getTeamMembers(team.id);
-      teamMemberPuuids = members.map((m) => m.puuid).filter(Boolean) as string[];
+      // Build lookup sets: by stored PUUID and by "gameName#tagLine" (case-insensitive)
+      const memberPuuidSet = new Set(members.map((m) => m.puuid).filter(Boolean));
+      const memberNameSet = new Set(
+        members.map((m) => `${m.game_name.toLowerCase()}#${m.tag_line.toLowerCase()}`),
+      );
+      // Cross-reference against actual match participants so we get their real PUUIDs
+      for (const p of match.info.participants) {
+        const nameKey = `${p.riotIdGameName.toLowerCase()}#${p.riotIdTagline.toLowerCase()}`;
+        if (memberPuuidSet.has(p.puuid) || memberNameSet.has(nameKey)) {
+          highlightedPuuids.push(p.puuid);
+        }
+      }
     }
   }
 
@@ -81,15 +92,15 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     rankedMap[r.puuid] = r.ranked;
   }
 
-  return { match, version, scoreMap, rankMap, rankedMap, sprites, teamMemberPuuids, teamSlug };
+  return { match, version, scoreMap, rankMap, rankedMap, sprites, highlightedPuuids, teamSlug };
 }
 
 const POSITION_ORDER: Record<string, number> = {
   TOP: 0,
   JUNGLE: 1,
   MIDDLE: 2,
-  BOTTOM: 3,
-  UTILITY: 4,
+  UTILITY: 3,
+  BOTTOM: 4,
 };
 
 const POSITION_ICON: Record<string, string> = {
@@ -423,7 +434,7 @@ function TeamTable({
 }
 
 export default function MatchDetail({ loaderData }: Route.ComponentProps) {
-  const { match, version, scoreMap, rankMap, rankedMap, sprites, teamMemberPuuids, teamSlug } = loaderData;
+  const { match, version, scoreMap, rankMap, rankedMap, sprites, highlightedPuuids, teamSlug } = loaderData;
   const { info } = match;
 
   const queueName = QUEUE_TYPE_MAP[info.queueId] || "Game";
@@ -433,7 +444,7 @@ export default function MatchDetail({ loaderData }: Route.ComponentProps) {
   const redSide = info.participants.slice(5, 10);
   const blueWon = blueSide[0]?.win ?? true;
 
-  const highlightPuuids = teamMemberPuuids.length > 0 ? new Set(teamMemberPuuids) : undefined;
+  const highlightPuuids = highlightedPuuids.length > 0 ? new Set(highlightedPuuids) : undefined;
   const backLink = teamSlug ? `/teams/${teamSlug}` : "/";
 
   return (
