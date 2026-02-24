@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, useNavigation } from "react-router";
 import type { ProcessedMatch } from "~/lib/types";
 import {
   spriteStyle,
@@ -39,10 +39,14 @@ export function MatchCard({
   const spell1Coords = sprites.spells?.[spell1];
   const spell2Coords = sprites.spells?.[spell2];
 
+  const navigation = useNavigation();
+  const matchUrl = `/matches/${match.matchId}`;
+  const isPending = navigation.state === "loading" && navigation.location?.pathname === matchUrl;
+
   return (
     <Link
-      to={`/matches/${match.matchId}`}
-      className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
+      to={matchUrl}
+      className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass} ${isPending ? "opacity-60" : ""}`}
     >
       {/* Champion Icon + Level */}
       <div className="relative flex-shrink-0" title={sprites.championNames?.[match.championName] || match.championName}>
@@ -172,6 +176,12 @@ export function MatchCard({
 
       {/* Game Info */}
       <div className="ml-auto min-w-0 flex-shrink text-right">
+        {isPending ? (
+          <svg className="ml-auto h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        ) : null}
         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
           {match.win ? "Victory" : "Defeat"}
         </p>

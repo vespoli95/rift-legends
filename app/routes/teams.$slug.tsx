@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Form, Link, redirect, useActionData } from "react-router";
+import { Form, Link, NavLink, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/teams.$slug";
 import {
   getTeamBySlug,
@@ -686,12 +686,14 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                               ?
                             </span>
                           )}
-                          <Link
+                          <NavLink
                             to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
-                            className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+                            className={({ isPending }) =>
+                              `text-xs font-medium ${isPending ? "animate-pulse text-indigo-500" : "text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"}`
+                            }
                           >
                             {member.game_name}
-                          </Link>
+                          </NavLink>
                         </div>
                         <MatchCard match={match} version={version} sprites={sprites} />
                       </div>
@@ -712,12 +714,14 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                         ?
                       </span>
                     )}
-                    <Link
+                    <NavLink
                       to={`/players/${encodeURIComponent(group.entries[0].member.game_name)}/${encodeURIComponent(group.entries[0].member.tag_line)}`}
-                      className="text-xs font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+                      className={({ isPending }) =>
+                        `text-xs font-medium ${isPending ? "animate-pulse text-indigo-500" : "text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"}`
+                      }
                     >
                       {group.entries[0].member.game_name}
-                    </Link>
+                    </NavLink>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500">
                       {timeAgo(group.entries[0].match.gameCreation)}
                     </span>

@@ -22,19 +22,34 @@ import {
 import type { MatchParticipant } from "~/lib/types";
 
 export function meta({ data }: Route.MetaArgs) {
-  if (!data) return [{ title: "Match - Rift Legends" }];
+  if (!data || !data.match) return [{ title: "Match - Rift Legends" }];
   const queue = QUEUE_TYPE_MAP[data.match.info.queueId] || "Game";
   return [{ title: `${queue} Match - Rift Legends` }];
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-  const match = await getMatchDetail(params.matchId);
-
   let version = "14.10.1";
   try {
     version = await getCurrentVersion();
   } catch {
     // Fall back to a reasonable default
+  }
+
+  const sprites = await getSpriteData(version);
+
+  let match;
+  try {
+    match = await getMatchDetail(params.matchId);
+  } catch {
+    return {
+      match: null,
+      version,
+      scoreMap: {},
+      rankMap: {},
+      rankedMap: {},
+      sprites,
+      error: "Failed to load match details. The match may not exist or the API may be unavailable.",
+    };
   }
 
   const scoreMap: Record<string, number> = {};
@@ -49,19 +64,16 @@ export async function loader({ params }: Route.LoaderArgs) {
     rankMap[puuid] = rank;
   }
 
-  // Fetch ranked data and sprite data in parallel
-  const [rankedResults, sprites] = await Promise.all([
-    Promise.all(
-      match.info.participants.map(async (p) => {
-        try {
-          return { puuid: p.puuid, ranked: await getRankedByPuuid(p.puuid) };
-        } catch {
-          return { puuid: p.puuid, ranked: null };
-        }
-      }),
-    ),
-    getSpriteData(version),
-  ]);
+  // Fetch ranked data in parallel
+  const rankedResults = await Promise.all(
+    match.info.participants.map(async (p) => {
+      try {
+        return { puuid: p.puuid, ranked: await getRankedByPuuid(p.puuid) };
+      } catch {
+        return { puuid: p.puuid, ranked: null };
+      }
+    }),
+  );
 
   const rankedMap: Record<string, RankedData | null> = {};
   for (const r of rankedResults) {
@@ -397,8 +409,24 @@ function TeamTable({
 
 export default function MatchDetail({ loaderData }: Route.ComponentProps) {
   const { match, version, scoreMap, rankMap, rankedMap, sprites } = loaderData;
-  const { info } = match;
 
+  if (!match) {
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <Link
+          to="/"
+          className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
+        >
+          &larr; Back
+        </Link>
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">
+          {("error" in loaderData && loaderData.error) || "Failed to load match details."}
+        </div>
+      </main>
+    );
+  }
+
+  const { info } = match;
   const queueName = QUEUE_TYPE_MAP[info.queueId] || "Game";
 
   // Split participants by team (first 5 = blue side, last 5 = red side)
