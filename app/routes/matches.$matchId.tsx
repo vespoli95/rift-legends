@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, useNavigation } from "react-router";
 import type { Route } from "./+types/matches.$matchId";
 import { getMatchDetail, getRankedByPuuid } from "~/lib/riot-api.server";
 import type { RankedData } from "~/lib/riot-api.server";
@@ -83,6 +83,14 @@ export async function loader({ params }: Route.LoaderArgs) {
   return { match, version, scoreMap, rankMap, rankedMap, sprites };
 }
 
+const ROLE_ORDER: Record<string, number> = {
+  TOP: 0,
+  JUNGLE: 1,
+  MIDDLE: 2,
+  BOTTOM: 3,
+  UTILITY: 4,
+};
+
 const POSITION_ICON: Record<string, string> = {
   TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
   JUNGLE: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
@@ -127,6 +135,7 @@ function ParticipantRow({
   sprites,
   maxDamage,
   maxDamageTaken,
+  isPending,
 }: {
   participant: MatchParticipant;
   version: string;
@@ -136,6 +145,7 @@ function ParticipantRow({
   sprites: SpriteData;
   maxDamage: number;
   maxDamageTaken: number;
+  isPending: boolean;
 }) {
   const spell1 = SUMMONER_SPELL_MAP[participant.summoner1Id] || "SummonerFlash";
   const spell2 = SUMMONER_SPELL_MAP[participant.summoner2Id] || "SummonerFlash";
@@ -196,13 +206,21 @@ function ParticipantRow({
 
       {/* Player Name + Rank */}
       <td className="px-2 py-2">
-        <Link
-          to={`/players/${encodeURIComponent(participant.riotIdGameName)}/${encodeURIComponent(participant.riotIdTagline)}`}
-          className="text-sm font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400"
-        >
-          {participant.riotIdGameName}
-          <span className="text-xs text-gray-400">#{participant.riotIdTagline}</span>
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            to={`/players/${encodeURIComponent(participant.riotIdGameName)}/${encodeURIComponent(participant.riotIdTagline)}`}
+            className={`text-sm font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400 ${isPending ? "opacity-60" : ""}`}
+          >
+            {participant.riotIdGameName}
+            <span className="text-xs text-gray-400">#{participant.riotIdTagline}</span>
+          </Link>
+          {isPending && (
+            <svg className="h-3.5 w-3.5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+        </div>
         {ranked && (
           <p
             className={`text-[11px] font-medium ${TIER_COLORS[ranked.tier] || "text-gray-500"}`}
@@ -344,12 +362,14 @@ function TeamTable({
   rankedMap: Record<string, RankedData | null>;
   sprites: SpriteData;
 }) {
-  // Sort participants by rift score descending
+  // Sort participants by role order (Top, Jungle, Mid, Bot, Support)
   const sorted = [...participants].sort(
-    (a, b) => (scoreMap[b.puuid] ?? 0) - (scoreMap[a.puuid] ?? 0),
+    (a, b) => (ROLE_ORDER[a.teamPosition] ?? 5) - (ROLE_ORDER[b.teamPosition] ?? 5),
   );
   const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
   const maxDamageTaken = Math.max(...participants.map((p) => p.totalDamageTaken));
+  const navigation = useNavigation();
+  const pendingPath = navigation.state === "loading" ? navigation.location?.pathname : null;
   const borderColor = isWinner
     ? "border-l-blue-500 dark:border-l-blue-400"
     : "border-l-red-500 dark:border-l-red-400";
@@ -399,6 +419,7 @@ function TeamTable({
               sprites={sprites}
               maxDamage={maxDamage}
               maxDamageTaken={maxDamageTaken}
+              isPending={pendingPath === `/players/${encodeURIComponent(p.riotIdGameName)}/${encodeURIComponent(p.riotIdTagline)}`}
             />
           ))}
         </tbody>
