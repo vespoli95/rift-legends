@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet } from "./db.server";
+import { cacheGet, cacheSet, upsertCachedPlayers } from "./db.server";
 import type {
   RiotAccount,
   MatchDetail,
@@ -251,6 +251,7 @@ export async function getAccountByRiotId(
   const data: RiotAccount = await res.json();
 
   cacheSet(cacheKey, data);
+  upsertCachedPlayers([{ gameName: data.gameName, tagLine: data.tagLine, source: "account" }]);
   return data;
 }
 
@@ -379,6 +380,8 @@ const SEASON_START_EPOCH = Math.floor(new Date("2026-01-09T00:00:00Z").getTime()
 const SEASON_START_MS = SEASON_START_EPOCH * 1000;
 const SEASON_IDS_TTL = 10 * 60; // 10min cache for the full ID list
 
+const MAX_SEASON_PAGES = 10; // Cap at 1000 match IDs
+
 async function getAllSeasonMatchIds(puuid: string): Promise<string[]> {
   const cacheKey = `season-ids:${puuid}`;
   const cached = cacheGet<string[]>(cacheKey, SEASON_IDS_TTL);
@@ -390,7 +393,7 @@ async function getAllSeasonMatchIds(puuid: string): Promise<string[]> {
   const allIds: string[] = [];
   let offset = 0;
   const pageSize = 100;
-  while (true) {
+  for (let page = 0; page < MAX_SEASON_PAGES; page++) {
     const url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?startTime=${SEASON_START_EPOCH}&start=${offset}&count=${pageSize}`;
     const res = await riotFetch(url);
     const ids: string[] = await res.json();
@@ -408,24 +411,33 @@ async function getAllSeasonMatchIds(puuid: string): Promise<string[]> {
  * Fetch all season matches for a player and return processed results.
  * Match details are individually cached (7d TTL), so repeat visits are fast.
  */
+const SEASON_BATCH_SIZE = 20;
+
 export async function getSeasonMatches(puuid: string): Promise<ProcessedMatch[]> {
   const matchIds = await getAllSeasonMatchIds(puuid);
   console.log(`[riot-api] season: processing ${matchIds.length} match IDs (startTime=${SEASON_START_EPOCH}, ${new Date(SEASON_START_MS).toISOString()})`);
 
   let failedCount = 0;
-  const results = await Promise.all(
-    matchIds.map(async (id) => {
-      try {
-        return await getProcessedMatch(id, puuid);
-      } catch {
-        failedCount++;
-        return null;
-      }
-    }),
-  );
+  const allResults: (ProcessedMatch | null)[] = [];
+
+  // Process in batches to limit concurrent heap usage
+  for (let i = 0; i < matchIds.length; i += SEASON_BATCH_SIZE) {
+    const batch = matchIds.slice(i, i + SEASON_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (id) => {
+        try {
+          return await getProcessedMatch(id, puuid);
+        } catch {
+          failedCount++;
+          return null;
+        }
+      }),
+    );
+    allResults.push(...batchResults);
+  }
 
   // Double-filter by gameCreation in case Riot API startTime isn't precise
-  const matches = results
+  const matches = allResults
     .filter((m): m is ProcessedMatch => m !== null)
     .filter((m) => m.gameCreation >= SEASON_START_MS);
 
@@ -468,6 +480,13 @@ export function getMatchDetail(matchId: string): Promise<MatchDetail> {
     const res = await riotFetch(url);
     const data: MatchDetail = await res.json();
     cacheSet(cacheKey, data);
+
+    // Index participant names for search
+    const players = data.info.participants
+      .filter((p) => p.riotIdGameName && p.riotIdTagline)
+      .map((p) => ({ gameName: p.riotIdGameName, tagLine: p.riotIdTagline, source: "match" }));
+    if (players.length > 0) upsertCachedPlayers(players);
+
     return data;
   })().finally(() => {
     inflightMatches.delete(matchId);

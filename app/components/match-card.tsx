@@ -7,6 +7,7 @@ import {
 } from "~/lib/ddragon";
 import type { SpriteData } from "~/lib/ddragon";
 import { formatKDA, kdaRatio, formatDuration, timeAgo, riftScore, riftScoreColor, ordinalSuffix } from "~/lib/utils";
+import { Spinner } from "~/components/spinner";
 
 const POSITION_ICON: Record<string, string> = {
   TOP: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
@@ -46,7 +47,7 @@ export function MatchCard({
   return (
     <Link
       to={matchUrl}
-      className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass} ${isPending ? "opacity-60" : ""}`}
+      className={`flex items-center gap-3 overflow-hidden rounded-lg border-l-4 px-3 py-2 transition-opacity hover:opacity-80 ${bgClass}`}
     >
       {/* Champion Icon + Level */}
       <div className="relative flex-shrink-0" title={sprites.championNames?.[match.championName] || match.championName}>
@@ -176,12 +177,7 @@ export function MatchCard({
 
       {/* Game Info */}
       <div className="ml-auto min-w-0 flex-shrink text-right">
-        {isPending ? (
-          <svg className="ml-auto h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        ) : null}
+        {isPending ? <Spinner className="ml-auto h-4 w-4 text-gray-400" /> : null}
         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
           {match.win ? "Victory" : "Defeat"}
         </p>

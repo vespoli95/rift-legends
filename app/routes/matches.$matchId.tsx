@@ -35,12 +35,15 @@ export async function loader({ params }: Route.LoaderArgs) {
     // Fall back to a reasonable default
   }
 
-  const sprites = await getSpriteData(version);
+  const [matchResult, sprites] = await Promise.all([
+    getMatchDetail(params.matchId).then(
+      (m) => ({ ok: true as const, match: m }),
+      () => ({ ok: false as const }),
+    ),
+    getSpriteData(version),
+  ]);
 
-  let match;
-  try {
-    match = await getMatchDetail(params.matchId);
-  } catch {
+  if (!matchResult.ok) {
     return {
       match: null,
       version,
@@ -51,6 +54,8 @@ export async function loader({ params }: Route.LoaderArgs) {
       error: "Failed to load match details. The match may not exist or the API may be unavailable.",
     };
   }
+
+  const match = matchResult.match;
 
   const scoreMap: Record<string, number> = {};
   for (const p of match.info.participants) {

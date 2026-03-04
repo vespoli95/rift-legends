@@ -1,4 +1,4 @@
-import { searchMembers, searchCachedAccounts, searchMatchParticipants, getCachedSummoner } from "~/lib/db.server";
+import { searchMembers, searchCachedPlayers, getCachedSummoner } from "~/lib/db.server";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
@@ -42,21 +42,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Step 2: search cached account lookups
-  const cachedResults = searchCachedAccounts(q);
+  // Step 2: search cached players (from match data and account lookups)
+  const cachedResults = searchCachedPlayers(q);
   for (const r of cachedResults) {
-    const summoner = getCachedSummoner(r.puuid);
-    addResult({
-      gameName: r.gameName,
-      tagLine: r.tagLine,
-      profileIconId: summoner?.profileIconId ?? null,
-      source: "cached",
-    });
-  }
-
-  // Step 3: search match participants (players seen in cached match data)
-  const matchResults = searchMatchParticipants(q);
-  for (const r of matchResults) {
     addResult({
       gameName: r.gameName,
       tagLine: r.tagLine,
@@ -65,7 +53,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Step 4: try Riot API lookup (requires exact gameName#tagLine)
+  // Step 3: try Riot API lookup (requires exact gameName#tagLine)
   if (q.includes("#")) {
     const [gameName, tagLine] = q.split("#", 2);
     if (gameName && gameName.length >= 2 && tagLine && tagLine.length >= 1) {

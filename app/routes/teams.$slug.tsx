@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Form, Link, NavLink, redirect, useActionData } from "react-router";
+import { Spinner } from "~/components/spinner";
 import type { Route } from "./+types/teams.$slug";
 import {
   getTeamBySlug,
@@ -305,6 +306,9 @@ function useMemberData(members: TeamMember[]) {
 
   return { loadedData, retryingIds, manualRetry, isMaxedOut };
 }
+
+const playerLinkClass = ({ isPending }: { isPending: boolean }) =>
+  `text-xs font-medium ${isPending ? "animate-pulse text-indigo-500" : "text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"}`;
 
 export default function TeamDetail({ loaderData }: Route.ComponentProps) {
   const { team, members, version, sprites } = loaderData;
@@ -622,10 +626,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
         <div className="space-y-3">
           {loadedData.size < members.length ? (
             <div className="flex items-center justify-center gap-2 py-12">
-              <svg className="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+              <Spinner className="h-5 w-5 text-gray-400" />
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 Loading matches ({loadedData.size}/{members.length})...
               </span>
@@ -688,9 +689,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                           )}
                           <NavLink
                             to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
-                            className={({ isPending }) =>
-                              `text-xs font-medium ${isPending ? "animate-pulse text-indigo-500" : "text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"}`
-                            }
+                            className={playerLinkClass}
                           >
                             {member.game_name}
                           </NavLink>
@@ -716,9 +715,7 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
                     )}
                     <NavLink
                       to={`/players/${encodeURIComponent(group.entries[0].member.game_name)}/${encodeURIComponent(group.entries[0].member.tag_line)}`}
-                      className={({ isPending }) =>
-                        `text-xs font-medium ${isPending ? "animate-pulse text-indigo-500" : "text-gray-600 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"}`
-                      }
+                      className={playerLinkClass}
                     >
                       {group.entries[0].member.game_name}
                     </NavLink>

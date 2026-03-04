@@ -5,6 +5,9 @@ const DDRAGON_BASE = "https://ddragon.leagueoflegends.com";
 const VERSION_TTL = 6 * 60 * 60; // 6 hours
 const SPRITE_TTL = 24 * 60 * 60; // 24 hours
 
+// In-process cache to avoid re-parsing the large SpriteData blob from SQLite on every request
+let spriteCache: { version: string; data: SpriteData } | null = null;
+
 export async function getCurrentVersion(): Promise<string> {
   const cached = cacheGet<string>("ddragon:version", VERSION_TTL);
   if (cached) return cached;
@@ -19,9 +22,15 @@ export async function getCurrentVersion(): Promise<string> {
 }
 
 export async function getSpriteData(version: string): Promise<SpriteData> {
+  // Check in-process cache first (avoids JSON.parse on every request)
+  if (spriteCache && spriteCache.version === version) return spriteCache.data;
+
   const cacheKey = `sprites:${version}`;
   const cached = cacheGet<SpriteData>(cacheKey, SPRITE_TTL);
-  if (cached) return cached;
+  if (cached) {
+    spriteCache = { version, data: cached };
+    return cached;
+  }
 
   const [champRes, itemRes, spellRes] = await Promise.all([
     fetch(`${DDRAGON_BASE}/cdn/${version}/data/en_US/champion.json`),
@@ -72,5 +81,6 @@ export async function getSpriteData(version: string): Promise<SpriteData> {
 
   const data: SpriteData = { champions, items, spells, sheetSizes, championNames, championById, itemNames, spellNames };
   cacheSet(cacheKey, data);
+  spriteCache = { version, data };
   return data;
 }

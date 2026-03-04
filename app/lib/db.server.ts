@@ -48,6 +48,14 @@ function initSchema() {
       data TEXT NOT NULL,
       cached_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS cached_players (
+      game_name TEXT NOT NULL,
+      tag_line TEXT NOT NULL,
+      source TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (game_name, tag_line)
+    );
   `);
 
   // Migrations for new columns
@@ -172,75 +180,38 @@ export function searchMembers(
     .all(pattern, pattern, limit) as { game_name: string; tag_line: string; profile_icon_id: number | null }[];
 }
 
-export function searchCachedAccounts(
-  query: string,
-  limit = 8
-): { gameName: string; tagLine: string; puuid: string }[] {
-  const d = getDb();
-  // Get all cached accounts and filter by gameName or tagLine
-  const rows = d
-    .prepare(
-      `SELECT data FROM riot_cache
-       WHERE cache_key LIKE 'account:%'`
-    )
-    .all() as { data: string }[];
-
-  const queryLower = query.toLowerCase();
-  const results: { gameName: string; tagLine: string; puuid: string }[] = [];
-
-  for (const row of rows) {
-    const parsed = JSON.parse(row.data) as { gameName: string; tagLine: string; puuid: string };
-    if (
-      parsed.gameName.toLowerCase().includes(queryLower) ||
-      parsed.tagLine.toLowerCase().includes(queryLower)
-    ) {
-      results.push({ gameName: parsed.gameName, tagLine: parsed.tagLine, puuid: parsed.puuid });
-      if (results.length >= limit) break;
-    }
-  }
-
-  return results;
-}
-
-export function searchMatchParticipants(
+export function searchCachedPlayers(
   query: string,
   limit = 8
 ): { gameName: string; tagLine: string }[] {
   const d = getDb();
-  const rows = d
+  const pattern = `%${query}%`;
+  return d
     .prepare(
-      `SELECT data FROM riot_cache WHERE cache_key LIKE 'match:%'`
+      `SELECT game_name AS gameName, tag_line AS tagLine FROM cached_players
+       WHERE game_name LIKE ? COLLATE NOCASE
+       ORDER BY updated_at DESC
+       LIMIT ?`
     )
-    .all() as { data: string }[];
+    .all(pattern, limit) as { gameName: string; tagLine: string }[];
+}
 
-  const queryLower = query.toLowerCase();
-  const seen = new Set<string>();
-  const results: { gameName: string; tagLine: string }[] = [];
-
-  for (const row of rows) {
-    if (results.length >= limit) break;
-    try {
-      const match = JSON.parse(row.data) as {
-        info: {
-          participants: { riotIdGameName: string; riotIdTagline: string }[];
-        };
-      };
-      for (const p of match.info.participants) {
-        if (!p.riotIdGameName || !p.riotIdTagline) continue;
-        const key = `${p.riotIdGameName.toLowerCase()}#${p.riotIdTagline.toLowerCase()}`;
-        if (seen.has(key)) continue;
-        if (p.riotIdGameName.toLowerCase().includes(queryLower)) {
-          seen.add(key);
-          results.push({ gameName: p.riotIdGameName, tagLine: p.riotIdTagline });
-          if (results.length >= limit) break;
-        }
-      }
-    } catch {
-      // Skip malformed cache entries
+export function upsertCachedPlayers(
+  players: { gameName: string; tagLine: string; source: string }[]
+): void {
+  const d = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  const stmt = d.prepare(
+    `INSERT INTO cached_players (game_name, tag_line, source, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(game_name, tag_line) DO UPDATE SET source = excluded.source, updated_at = excluded.updated_at`
+  );
+  const runMany = d.transaction((entries: typeof players) => {
+    for (const p of entries) {
+      stmt.run(p.gameName, p.tagLine, p.source, now);
     }
-  }
-
-  return results;
+  });
+  runMany(players);
 }
 
 export function getCachedSummoner(puuid: string): { profileIconId: number } | null {
@@ -278,3 +249,48 @@ export function cacheSet(key: string, data: unknown): void {
     "INSERT OR REPLACE INTO riot_cache (cache_key, data, cached_at) VALUES (?, ?, ?)"
   ).run(key, JSON.stringify(data), Math.floor(Date.now() / 1000));
 }
+
+// Max age per cache key prefix (seconds). Anything older gets pruned.
+const CACHE_MAX_AGES: [string, number][] = [
+  ["match:", 7 * 24 * 60 * 60],       // 7 days
+  ["account:", 24 * 60 * 60],          // 24h
+  ["summoner:", 24 * 60 * 60],         // 24h
+  ["ranked:", 60 * 60],                // 1h
+  ["matches:", 30 * 60],               // 30min
+  ["season-ids:", 30 * 60],            // 30min
+  ["active-game:", 5 * 60],            // 5min
+  ["sprites:", 7 * 24 * 60 * 60],      // 7 days
+  ["ddragon:", 24 * 60 * 60],          // 24h
+];
+
+export function pruneCache(): number {
+  const d = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  let totalDeleted = 0;
+
+  for (const [prefix, maxAge] of CACHE_MAX_AGES) {
+    const result = d
+      .prepare("DELETE FROM riot_cache WHERE cache_key LIKE ? AND cached_at < ?")
+      .run(`${prefix}%`, now - maxAge);
+    totalDeleted += result.changes;
+  }
+
+  // Safety net: delete any row older than 14 days regardless of prefix
+  const fallback = d
+    .prepare("DELETE FROM riot_cache WHERE cached_at < ?")
+    .run(now - 14 * 24 * 60 * 60);
+  totalDeleted += fallback.changes;
+
+  return totalDeleted;
+}
+
+// Run pruning on startup and every 10 minutes
+pruneCache();
+setInterval(() => {
+  try {
+    const deleted = pruneCache();
+    if (deleted > 0) console.log(`[db] pruned ${deleted} expired cache rows`);
+  } catch (e) {
+    console.error("[db] cache prune failed:", e);
+  }
+}, 10 * 60 * 1000);
