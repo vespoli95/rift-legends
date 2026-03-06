@@ -1,8 +1,3 @@
-import { searchMembers, searchCachedPlayers, getCachedSummoner } from "~/lib/db.server";
-import {
-  getAccountByRiotId,
-  getSummonerByPuuid,
-} from "~/lib/riot-api.server";
 import type { Route } from "./+types/api.search-players";
 
 interface SearchResult {
@@ -13,6 +8,12 @@ interface SearchResult {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const { searchMembers, searchCachedPlayers } = await import(
+    "~/lib/db.server"
+  );
+  const { getAccountByRiotId, getSummonerByPuuid } = await import(
+    "~/lib/riot-api.server"
+  );
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
 
