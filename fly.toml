@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for rift-legends on 2026-02-07T18:41:57Z
+# fly.toml app configuration file generated for rift-legends on 2026-03-06T19:16:41Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -7,19 +7,6 @@ app = 'rift-legends'
 primary_region = 'yyz'
 
 [build]
-
-[env]
-  PORT = "8080"
-
-[processes]
-  app = 'npm run start'
-
-[[mounts]]
-  source = 'data'
-  destination = '/data'
-  auto_extend_size_threshold = 80
-  auto_extend_size_increment = '1GB'
-  auto_extend_size_limit = '10GB'
 
 [http_service]
   internal_port = 8080
@@ -30,6 +17,7 @@ primary_region = 'yyz'
   processes = ['app']
 
 [[vm]]
+  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 1024
