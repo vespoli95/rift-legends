@@ -1,18 +1,18 @@
-import { searchMembers, searchCachedPlayers, getCachedSummoner } from "~/lib/db.server";
+import { searchMembers, searchCachedPlayers } from "~/lib/db.server";
 import {
   getAccountByRiotId,
   getSummonerByPuuid,
 } from "~/lib/riot-api.server";
 import type { Route } from "./+types/api.search-players";
 
-interface SearchResult {
-  gameName: string;
-  tagLine: string;
-  profileIconId: number | null;
-  source: "local" | "riot" | "cached";
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
+  interface SearchResult {
+    gameName: string;
+    tagLine: string;
+    profileIconId: number | null;
+    source: "local" | "riot" | "cached";
+  }
+
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
 
