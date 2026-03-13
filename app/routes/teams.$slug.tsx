@@ -26,6 +26,7 @@ import {
   MemberCardSkeleton,
 } from "~/components/member-section";
 import { MatchCard } from "~/components/match-card";
+import { LiveGameBadge } from "~/components/live-game-badge";
 import { PlayerSearch } from "~/components/player-search";
 import { EmojiPicker } from "~/components/emoji-picker";
 import type { MemberWithMatches, ProcessedMatch, TeamMember, ActiveGameInfo } from "~/lib/types";
@@ -639,6 +640,49 @@ export default function TeamDetail({ loaderData }: Route.ComponentProps) {
             </div>
           ) : (
             <>
+            {/* Live Now section */}
+            {(() => {
+              const liveMemberEntries = orderedMembers.filter((m) => liveGames[m.id]);
+              if (liveMemberEntries.length === 0) return null;
+              return (
+                <div className="rounded-lg border border-green-300 bg-green-50/30 p-3 dark:border-green-800 dark:bg-green-950/20">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">
+                      Live Now
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {liveMemberEntries.map((member) => (
+                      <NavLink
+                        key={member.id}
+                        to={`/players/${encodeURIComponent(member.game_name)}/${encodeURIComponent(member.tag_line)}`}
+                        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-green-100/50 dark:hover:bg-green-900/20"
+                      >
+                        {member.profile_icon_id != null ? (
+                          <img
+                            src={profileIconUrl(version, member.profile_icon_id)}
+                            alt=""
+                            className="h-6 w-6 rounded-full"
+                          />
+                        ) : (
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                            ?
+                          </span>
+                        )}
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {member.game_name}
+                        </span>
+                        <LiveGameBadge game={liveGames[member.id]!} sprites={sprites} version={version} />
+                      </NavLink>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {visibleRecentGames.map((group) =>
               group.entries.length > 1 ? (
                 <div
