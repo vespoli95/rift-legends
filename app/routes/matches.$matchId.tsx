@@ -18,6 +18,7 @@ import {
   riftScoreColor,
   ordinalSuffix,
   computeGameRanks,
+  sortByRole,
 } from "~/lib/utils";
 import type { MatchParticipant } from "~/lib/types";
 
@@ -349,10 +350,8 @@ function TeamTable({
   rankedMap: Record<string, RankedData | null>;
   sprites: SpriteData;
 }) {
-  // Sort participants by rift score descending
-  const sorted = [...participants].sort(
-    (a, b) => (scoreMap[b.puuid] ?? 0) - (scoreMap[a.puuid] ?? 0),
-  );
+  // Sort participants by role: Top → Jungle → Mid → Bot → Support
+  const sorted = sortByRole(participants);
   const maxDamage = Math.max(...participants.map((p) => p.totalDamageDealtToChampions));
   const maxDamageTaken = Math.max(...participants.map((p) => p.totalDamageTaken));
   const borderColor = isWinner

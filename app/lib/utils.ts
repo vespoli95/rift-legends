@@ -206,6 +206,24 @@ export function computeGameRanks(
   return ranks;
 }
 
+const ROLE_ORDER: Record<string, number> = {
+  TOP: 0,
+  JUNGLE: 1,
+  MIDDLE: 2,
+  BOTTOM: 3,
+  UTILITY: 4,
+};
+
+export function sortByRole<T extends { teamPosition?: string }>(
+  participants: T[],
+): T[] {
+  return [...participants].sort(
+    (a, b) =>
+      (ROLE_ORDER[a.teamPosition ?? ""] ?? 99) -
+      (ROLE_ORDER[b.teamPosition ?? ""] ?? 99),
+  );
+}
+
 export function riftScoreColor(score: number): string {
   if (score >= 8) return "text-orange-500 dark:text-orange-400";
   if (score >= 6) return "text-blue-500 dark:text-blue-400";
