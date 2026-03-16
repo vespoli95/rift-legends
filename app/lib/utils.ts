@@ -60,6 +60,7 @@ export function riftScore(match: {
   goldEarned: number;
   gameDuration: number;
   teamPosition?: string;
+  teamKills?: number;
 }): number {
   const minutes = match.gameDuration / 60 || 1;
   const isSupport = match.teamPosition === "UTILITY";
@@ -69,6 +70,12 @@ export function riftScore(match: {
     ? (match.kills + match.assists) * 1.5
     : (match.kills + match.assists) / match.deaths;
   const kdaScore = Math.min(10, Math.log(kdaVal + 1) * 3.5);
+
+  // Kill participation component (0-10): % of team kills involved in
+  const kp = match.teamKills != null && match.teamKills > 0
+    ? (match.kills + match.assists) / match.teamKills
+    : null;
+  const kpScore = kp != null ? Math.min(10, kp * 12) : null;
 
   // CS/min component (0-10): 8 cs/min = ~8, 10+ = 10
   const csScore = Math.min(10, match.csPerMin * 1.1);
@@ -85,13 +92,19 @@ export function riftScore(match: {
   const gpm = match.goldEarned / minutes;
   const goldScore = Math.min(10, gpm / 45);
 
-  // Supports: boost KDA & vision weight, reduce CS/damage/gold weight
+  // Weights: KP gets 0.10, taken from damage (-0.05) and gold (-0.05)
+  // When KP is unavailable, fall back to original weights
   const w = isSupport
-    ? { kda: 0.37, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
-    : { kda: 0.30, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
+    ? kpScore != null
+      ? { kda: 0.35, kp: 0.10, cs: 0.03, vision: 0.25, dmg: 0.17, gold: 0.10 }
+      : { kda: 0.37, kp: 0, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
+    : kpScore != null
+      ? { kda: 0.28, kp: 0.10, cs: 0.13, vision: 0.09, dmg: 0.27, gold: 0.13 }
+      : { kda: 0.30, kp: 0, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   const score =
     kdaScore * w.kda +
+    (kpScore ?? 0) * w.kp +
     csScore * w.cs +
     visionScoreVal * w.vision +
     dmgScore * w.dmg +
@@ -109,6 +122,12 @@ function riftScoreRaw(match: Parameters<typeof riftScore>[0]): number {
     ? (match.kills + match.assists) * 1.5
     : (match.kills + match.assists) / match.deaths;
   const kdaScore = Math.min(10, Math.log(kdaVal + 1) * 3.5);
+
+  const kp = match.teamKills != null && match.teamKills > 0
+    ? (match.kills + match.assists) / match.teamKills
+    : null;
+  const kpScore = kp != null ? Math.min(10, kp * 12) : null;
+
   const csScore = Math.min(10, match.csPerMin * 1.1);
   const visionPerMin = match.visionScore / minutes;
   const visionScoreVal = Math.min(10, visionPerMin * 6);
@@ -118,11 +137,16 @@ function riftScoreRaw(match: Parameters<typeof riftScore>[0]): number {
   const goldScore = Math.min(10, gpm / 45);
 
   const w = isSupport
-    ? { kda: 0.37, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
-    : { kda: 0.30, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
+    ? kpScore != null
+      ? { kda: 0.35, kp: 0.10, cs: 0.03, vision: 0.25, dmg: 0.17, gold: 0.10 }
+      : { kda: 0.37, kp: 0, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
+    : kpScore != null
+      ? { kda: 0.28, kp: 0.10, cs: 0.13, vision: 0.09, dmg: 0.27, gold: 0.13 }
+      : { kda: 0.30, kp: 0, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   return (
     kdaScore * w.kda +
+    (kpScore ?? 0) * w.kp +
     csScore * w.cs +
     visionScoreVal * w.vision +
     dmgScore * w.dmg +
@@ -143,6 +167,7 @@ export function participantRiftScore(
     teamPosition?: string;
   },
   gameDuration: number,
+  teamKills?: number,
 ): number {
   const totalCs = participant.totalMinionsKilled + participant.neutralMinionsKilled;
   return riftScore({
@@ -155,6 +180,7 @@ export function participantRiftScore(
     goldEarned: participant.goldEarned,
     gameDuration,
     teamPosition: participant.teamPosition,
+    teamKills,
   });
 }
 
@@ -169,6 +195,7 @@ type RankableParticipant = {
   totalDamageDealtToChampions: number;
   goldEarned: number;
   teamPosition?: string;
+  win?: boolean;
 };
 
 /**
@@ -180,8 +207,16 @@ export function computeGameRanks(
   participants: RankableParticipant[],
   gameDuration: number,
 ): Map<string, number> {
+  // Pre-compute team kills for kill participation
+  const teamKillsMap = new Map<boolean, number>();
+  for (const p of participants) {
+    const team = p.win ?? true;
+    teamKillsMap.set(team, (teamKillsMap.get(team) ?? 0) + p.kills);
+  }
+
   const entries = participants.map((p) => {
     const totalCs = p.totalMinionsKilled + p.neutralMinionsKilled;
+    const teamKills = teamKillsMap.get(p.win ?? true) ?? 0;
     const raw = riftScoreRaw({
       kills: p.kills,
       deaths: p.deaths,
@@ -192,6 +227,7 @@ export function computeGameRanks(
       goldEarned: p.goldEarned,
       gameDuration,
       teamPosition: p.teamPosition,
+      teamKills,
     });
     return { puuid: p.puuid, raw, ka: p.kills + p.assists };
   });

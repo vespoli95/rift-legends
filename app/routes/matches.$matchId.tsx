@@ -58,9 +58,17 @@ export async function loader({ params }: Route.LoaderArgs) {
 
   const match = matchResult.match;
 
+  // Pre-compute team kills for kill participation
+  const teamKillsByWin: Record<string, number> = {};
+  for (const p of match.info.participants) {
+    const key = String(p.win);
+    teamKillsByWin[key] = (teamKillsByWin[key] ?? 0) + p.kills;
+  }
+
   const scoreMap: Record<string, number> = {};
   for (const p of match.info.participants) {
-    scoreMap[p.puuid] = participantRiftScore(p, match.info.gameDuration);
+    const teamKills = teamKillsByWin[String(p.win)] ?? 0;
+    scoreMap[p.puuid] = participantRiftScore(p, match.info.gameDuration, teamKills);
   }
 
   // Compute ranks using shared logic (unrounded scores + tie-break)
