@@ -335,6 +335,7 @@ export default function PlayerPage({ loaderData }: Route.ComponentProps) {
         goldEarned: m.goldEarned,
         gameDuration: m.gameDuration,
         teamPosition: m.teamPosition,
+        teamKills: m.teamKills,
       });
       byChamp.set(m.championName, existing);
     }

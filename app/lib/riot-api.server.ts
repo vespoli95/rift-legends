@@ -508,6 +508,12 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
   const ranks = computeGameRanks(match.info.participants, match.info.gameDuration);
   const gameRank = ranks.get(puuid) ?? 10;
 
+  // Compute team kills for kill participation
+  const teamParticipants = match.info.participants.filter(
+    (p) => p.win === participant.win,
+  );
+  const teamKills = teamParticipants.reduce((sum, p) => sum + p.kills, 0);
+
   return {
     matchId: match.metadata.matchId,
     win: participant.win,
@@ -538,6 +544,7 @@ function processMatch(match: MatchDetail, puuid: string): ProcessedMatch | null 
     goldEarned: participant.goldEarned,
     gameRank,
     teamPosition: participant.teamPosition,
+    teamKills,
   };
 }
 
