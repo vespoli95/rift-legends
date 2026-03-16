@@ -97,12 +97,14 @@ export function MatchCard({
       <div className="min-w-[70px] flex-shrink-0 text-center">
         <p className="text-sm font-bold text-gray-900 dark:text-white">
           {formatKDA(match.kills, match.deaths, match.assists)}
+          {match.teamKills > 0 && (
+            <span className="font-normal text-gray-500 dark:text-gray-400">
+              {" "}&middot; {Math.round(((match.kills + match.assists) / match.teamKills) * 100)}%
+            </span>
+          )}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {kdaRatio(match.kills, match.deaths, match.assists)} KDA
-          {match.teamKills > 0 && (
-            <> &middot; {Math.round(((match.kills + match.assists) / match.teamKills) * 100)}% KP</>
-          )}
         </p>
       </div>
 
