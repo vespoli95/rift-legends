@@ -92,14 +92,14 @@ export function riftScore(match: {
   const gpm = match.goldEarned / minutes;
   const goldScore = Math.min(10, gpm / 45);
 
-  // Weights: KP gets 0.10, taken from damage (-0.05) and gold (-0.05)
+  // Weights: KP gets 0.15, taken from damage and gold
   // When KP is unavailable, fall back to original weights
   const w = isSupport
     ? kpScore != null
-      ? { kda: 0.35, kp: 0.10, cs: 0.03, vision: 0.25, dmg: 0.17, gold: 0.10 }
+      ? { kda: 0.35, kp: 0.15, cs: 0.03, vision: 0.25, dmg: 0.14, gold: 0.08 }
       : { kda: 0.37, kp: 0, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
     : kpScore != null
-      ? { kda: 0.28, kp: 0.10, cs: 0.13, vision: 0.09, dmg: 0.27, gold: 0.13 }
+      ? { kda: 0.28, kp: 0.15, cs: 0.13, vision: 0.09, dmg: 0.24, gold: 0.11 }
       : { kda: 0.30, kp: 0, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   const score =
@@ -138,10 +138,10 @@ function riftScoreRaw(match: Parameters<typeof riftScore>[0]): number {
 
   const w = isSupport
     ? kpScore != null
-      ? { kda: 0.35, kp: 0.10, cs: 0.03, vision: 0.25, dmg: 0.17, gold: 0.10 }
+      ? { kda: 0.35, kp: 0.15, cs: 0.03, vision: 0.25, dmg: 0.14, gold: 0.08 }
       : { kda: 0.37, kp: 0, cs: 0.03, vision: 0.28, dmg: 0.20, gold: 0.12 }
     : kpScore != null
-      ? { kda: 0.28, kp: 0.10, cs: 0.13, vision: 0.09, dmg: 0.27, gold: 0.13 }
+      ? { kda: 0.28, kp: 0.15, cs: 0.13, vision: 0.09, dmg: 0.24, gold: 0.11 }
       : { kda: 0.30, kp: 0, cs: 0.15, vision: 0.10, dmg: 0.30, gold: 0.15 };
 
   return (

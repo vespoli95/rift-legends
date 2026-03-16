@@ -103,7 +103,7 @@ export function MatchCard({
         </p>
       </div>
 
-      {/* Rift Score */}
+      {/* Rift Score + KP */}
       <div className="min-w-[40px] flex-shrink-0 text-center">
         <p className={`text-sm font-bold ${scoreColor}`}>
           {score.toFixed(1)}
@@ -120,6 +120,11 @@ export function MatchCard({
           <span className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">
             {ordinalSuffix(match.gameRank)}
           </span>
+        )}
+        {match.teamKills > 0 && (
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+            {Math.round(((match.kills + match.assists) / match.teamKills) * 100)}% KP
+          </p>
         )}
       </div>
 
