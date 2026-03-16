@@ -93,17 +93,20 @@ export function MatchCard({
         </div>
       )}
 
-      {/* KDA */}
+      {/* KDA + KP */}
       <div className="min-w-[70px] flex-shrink-0 text-center">
         <p className="text-sm font-bold text-gray-900 dark:text-white">
           {formatKDA(match.kills, match.deaths, match.assists)}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {kdaRatio(match.kills, match.deaths, match.assists)} KDA
+          {match.teamKills > 0 && (
+            <> &middot; {Math.round(((match.kills + match.assists) / match.teamKills) * 100)}% KP</>
+          )}
         </p>
       </div>
 
-      {/* Rift Score + KP */}
+      {/* Rift Score */}
       <div className="min-w-[40px] flex-shrink-0 text-center">
         <p className={`text-sm font-bold ${scoreColor}`}>
           {score.toFixed(1)}
@@ -120,11 +123,6 @@ export function MatchCard({
           <span className="text-[10px] text-gray-400 dark:text-gray-500" title="Rift Score — performance rating based on KDA, damage, CS, gold, and vision">
             {ordinalSuffix(match.gameRank)}
           </span>
-        )}
-        {match.teamKills > 0 && (
-          <p className="text-[10px] text-gray-500 dark:text-gray-400">
-            {Math.round(((match.kills + match.assists) / match.teamKills) * 100)}% KP
-          </p>
         )}
       </div>
 
